@@ -194,6 +194,7 @@ pub fn run() {
       }
       Ok(())
     })
+    .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
         get_dropped_files,
         rename_subtitle_files

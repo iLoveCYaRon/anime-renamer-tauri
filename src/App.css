@@ -1,285 +1,288 @@
 body {
-  margin: 0;
-  padding: 0;
-  color: #fff;
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  background-color: #0f172a;
-  overflow: hidden;
+    margin: 0;
+    padding: 0;
+    color: #fff;
+    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+    background-color: #0f172a;
+    overflow: hidden;
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
 }
 
 .header {
-  background-color: #1e293b;
-  padding: 10px 20px;
-  border-bottom: 1px solid #334155;
+    background-color: #1e293b;
+    padding: 10px 20px;
+    border-bottom: 1px solid #334155;
 }
 
 .header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: #e2e8f0;
+    margin: 0;
+    font-size: 1.5rem;
+    color: #e2e8f0;
 }
 
 .main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  gap: 20px;
-  overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 20px;
+    overflow-y: auto;
 }
 
 /* 控制按钮区域 */
 .control-buttons {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-  gap: 10px;
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+    gap: 10px;
 }
 
 .add-files-button {
-  padding: 8px 16px;
-  background: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  display: inline-block;
+    padding: 8px 16px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    display: inline-block;
 }
 
 .add-files-button:hover {
-  background: #1d4ed8;
+    background: #1d4ed8;
 }
 
 .add-files-button:active {
-  transform: scale(0.98);
+    transform: scale(0.98);
 }
 
 .clear-button {
-  padding: 8px 16px;
-  background: #dc2626;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
+    padding: 8px 16px;
+    background: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
 }
 
 .clear-button:hover {
-  background: #b91c1c;
+    background: #b91c1c;
 }
 
 .clear-button:active {
-  transform: scale(0.98);
-}
-
-.drop-area {
-  border: 2px dashed #475569;
-  border-radius: 8px;
-  padding: 40px;
-  text-align: center;
-  background-color: #1e293b;
-  transition: all 0.3s ease;
-  min-height: 150px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.drop-area.dragging {
-  border-color: #3b82f6;
-  background-color: #0f172a;
-}
-
-.drop-area p {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 1.1rem;
+    transform: scale(0.98);
 }
 
 .file-lists {
-  display: flex;
-  gap: 20px;
-  flex: 1;
-  overflow: hidden;
-  margin-bottom: 20px;
+    display: flex;
+    gap: 20px;
+    flex: 1;
+    overflow: hidden;
+    margin-bottom: 20px;
+    min-height: 300px;
+    flex-shrink: 0;
 }
 
 .list-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-color: #1e293b;
-  border-radius: 8px;
-  overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1e293b;
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .list-container h2 {
-  margin: 0;
-  padding: 15px;
-  background-color: #334155;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #e2e8f0;
+    margin: 0;
+    padding: 15px;
+    background-color: #334155;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e2e8f0;
 }
 
 .file-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
 }
 
 .file-item {
-  padding: 10px;
-  border-bottom: 1px solid #334155;
-  color: #cbd5e1;
-  font-size: 0.95rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+    padding: 10px;
+    border-bottom: 1px solid #334155;
+    color: #cbd5e1;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .file-item:last-child {
-  border-bottom: none;
+    border-bottom: none;
 }
 
 .empty-message {
-  text-align: center;
-  color: #64748b;
-  margin: 20px;
+    text-align: center;
+    color: #64748b;
+    margin: 20px;
 }
 
 .rename-controls {
-  background-color: #1e293b;
-  border-radius: 8px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
+    background-color: #1e293b;
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
-.suffix-inputs, .suffix-presets {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.suffix-inputs,
+.suffix-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-.suffix-inputs label, .suffix-presets label {
-  color: #e2e8f0;
-  font-size: 0.9rem;
-  font-weight: 500;
+.suffix-inputs label,
+.suffix-presets label {
+    color: #e2e8f0;
+    font-size: 0.9rem;
+    font-weight: 500;
 }
 
 .suffix-inputs input {
-  padding: 10px;
-  border: 1px solid #475569;
-  border-radius: 4px;
-  background-color: #0f172a;
-  color: #e2e8f0;
-  font-size: 1rem;
+    padding: 10px;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    background-color: #0f172a;
+    color: #e2e8f0;
+    font-size: 1rem;
 }
 
 .suffix-inputs input:focus {
-  outline: none;
-  border-color: #3b82f6;
+    outline: none;
+    border-color: #3b82f6;
 }
 
 .preset-buttons {
-  display: flex;
-  gap: 10px;
+    display: flex;
+    gap: 10px;
 }
 
 .preset-buttons button {
-  flex: 1;
-  padding: 8px 16px;
-  background-color: #334155;
-  border: 1px solid #475569;
-  border-radius: 4px;
-  color: #e2e8f0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.9rem;
+    flex: 1;
+    padding: 8px 16px;
+    background-color: #334155;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
 }
 
 .preset-buttons button:hover {
-  background-color: #475569;
+    background-color: #475569;
 }
 
 .preset-buttons button.active {
-  background-color: #3b82f6;
-  border-color: #3b82f6;
+    background-color: #3b82f6;
+    border-color: #3b82f6;
 }
 
 .rename-button {
-  padding: 12px 24px;
-  background-color: #2563eb;
-  border: none;
-  border-radius: 6px;
-  color: white;
-  font-size: 1.1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+    padding: 12px 24px;
+    background-color: #2563eb;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
 .rename-button:hover {
-  background-color: #1d4ed8;
+    background-color: #1d4ed8;
 }
 
 .rename-button:active {
-  transform: scale(0.98);
+    transform: scale(0.98);
 }
 
 /* 状态提示样式 */
 .status-message {
-  padding: 12px;
-  margin-top: 10px;
-  border-radius: 6px;
-  text-align: center;
-  font-weight: 500;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 500;
 }
 
 .status-success {
-  background: #166534;
-  color: #dcfce7;
-  border: 1px solid #22c55e;
+    background: #166534;
+    color: #dcfce7;
+    border: 1px solid #22c55e;
 }
 
 .status-error {
-  background: #991b1b;
-  color: #fee2e2;
-  border: 1px solid #ef4444;
+    background: #991b1b;
+    color: #fee2e2;
+    border: 1px solid #ef4444;
 }
 
 .status-info {
-  background: #1e40af;
-  color: #dbeafe;
-  border: 1px solid #3b82f6;
+    background: #1e40af;
+    color: #dbeafe;
+    border: 1px solid #3b82f6;
 }
 
 /* 滚动条样式 */
 .file-list::-webkit-scrollbar {
-  width: 8px;
+    width: 8px;
 }
 
 .file-list::-webkit-scrollbar-track {
-  background: #0f172a;
+    background: #0f172a;
 }
 
 .file-list::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 4px;
+    background: #475569;
+    border-radius: 4px;
 }
 
 .file-list::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+    background: #64748b;
+}
+
+/* 全屏拖放遮罩 */
+.drop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.9);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 4px dashed #3b82f6;
+  pointer-events: none; /* 让事件穿透，虽然 Tauri 事件是全局的，但这样更安全 */
+}
+
+.drop-overlay-content {
+  text-align: center;
+  color: #3b82f6;
+  font-size: 2rem;
+  font-weight: 600;
+  pointer-events: none;
 }
