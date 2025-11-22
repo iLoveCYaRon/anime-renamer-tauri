@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, TauriEvent} from "@tauri-apps/api/event";
 import "./App.css";
 
 interface FileInfo {
@@ -13,6 +13,10 @@ interface RenameResponse {
     success: boolean;
     message: string;
     renamed_files: string[];
+}
+
+interface DragDropPayload {
+    paths: string[];
 }
 
 // 视频文件扩展名列表
@@ -54,58 +58,41 @@ const App = () => {
         "info"
     );
 
-    // 监听 Tauri 文件拖放事件
-  useEffect(() => {
-    let unlistenDrop: (() => void) | undefined;
-    let unlistenHover: (() => void) | undefined;
-    let unlistenCancel: (() => void) | undefined;
-    let isUnmounted = false;
+    useEffect(() => {
+        let unlistenDrop: (() => void) | undefined;
+        let isUnmounted = false;
 
-    console.log('Setting up Tauri event listeners...');
+        console.log("Setting up Tauri event listeners...");
 
-    const setupListeners = async () => {
-      try {
-        unlistenHover = await listen('tauri://file-drop-hover', () => {
-          if (isUnmounted) return;
-          console.log('File drop hover');
-          setDragging(true);
-        });
+        const setupListeners = async () => {
+            try {
+                unlistenDrop = await listen<DragDropPayload>(TauriEvent.DRAG_DROP, async (event) => {
+                    if (isUnmounted) return;
+                    console.log("File drop event received:", event);
+                    setDragging(false);
+                    const paths = event.payload.paths;
+                    if (paths && paths.length > 0) {
+                        console.log("Processing paths:", paths);
+                        await processDroppedPaths(paths);
+                    } else {
+                        console.log("No paths received in drop event");
+                    }
+                });
 
-        unlistenCancel = await listen('tauri://file-drop-cancelled', () => {
-          if (isUnmounted) return;
-          console.log('File drop cancelled');
-          setDragging(false);
-        });
+                console.log("Tauri event listeners set up successfully");
+            } catch (error) {
+                console.error("Error setting up Tauri listeners:", error);
+            }
+        };
 
-        unlistenDrop = await listen('tauri://file-drop', async (event) => {
-          if (isUnmounted) return;
-          console.log('File drop event received:', event);
-          setDragging(false);
-          const paths = event.payload as string[];
-          if (paths && paths.length > 0) {
-            console.log('Processing paths:', paths);
-            await processDroppedPaths(paths);
-          } else {
-            console.log('No paths received in drop event');
-          }
-        });
-        
-        console.log('Tauri event listeners set up successfully');
-      } catch (error) {
-        console.error('Error setting up Tauri listeners:', error);
-      }
-    };
+        setupListeners();
 
-    setupListeners();
-
-    return () => {
-      isUnmounted = true;
-      console.log('Cleaning up Tauri event listeners...');
-      if (unlistenDrop) unlistenDrop();
-      if (unlistenHover) unlistenHover();
-      if (unlistenCancel) unlistenCancel();
-    };
-  }, []); // 空依赖数组，确保只注册一次
+        return () => {
+            isUnmounted = true;
+            console.log("Cleaning up Tauri event listeners...");
+            if (unlistenDrop) unlistenDrop();
+        };
+    }, []); // 空依赖数组，确保只注册一次
 
     // 处理从 Tauri 拖放事件获取的路径
     const processDroppedPaths = async (paths: string[]) => {
@@ -291,7 +278,7 @@ const App = () => {
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         if (e.dataTransfer) {
-            e.dataTransfer.dropEffect = 'copy';
+            e.dataTransfer.dropEffect = "copy";
         }
         setDragging(true);
     };
@@ -313,7 +300,7 @@ const App = () => {
     };
 
     return (
-        <div 
+        <div
             className="app"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -324,16 +311,14 @@ const App = () => {
             </header>
 
             <main className="main">
-        {/* 全屏拖放遮罩 */}
-        {dragging && (
-          <div className="drop-overlay">
-            <div className="drop-overlay-content">
-              <p>释放文件以添加</p>
-            </div>
-          </div>
-        )}
-
-
+                {/* 全屏拖放遮罩 */}
+                {dragging && (
+                    <div className="drop-overlay">
+                        <div className="drop-overlay-content">
+                            <p>释放文件以添加</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* 添加文件选择器和清除按钮 */}
                 <div className="control-buttons">
