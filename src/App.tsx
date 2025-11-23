@@ -1,481 +1,446 @@
+// 应用入口组件：负责文件拖放/选择、列表展示与字幕重命名
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, TauriEvent} from "@tauri-apps/api/event";
+import { listen, TauriEvent } from "@tauri-apps/api/event";
+import {
+  Button,
+  Card,
+  Col,
+  Divider,
+  Flex,
+  Input,
+  Layout,
+  message,
+  Row,
+  Segmented,
+  Space,
+  Tag,
+  Typography,
+  Upload,
+  UploadFile,
+  Empty,
+  List,
+  Tooltip,
+  ConfigProvider,
+} from "antd";
+import {
+  ClearOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  UploadOutlined,
+} from "@ant-design/icons";
+import { AntdThemeProvider } from "./components/AntdThemeProvider";
 import "./App.css";
 
+// Ant Design 结构与排版
+const { Header, Content } = Layout;
+const { Title, Text } = Typography;
+
+// 前端与后端共享的文件信息结构
 interface FileInfo {
-    name: string;
-    path: string;
-    is_video: boolean;
+  name: string;
+  path: string;
+  is_video: boolean;
 }
 
+// 后端重命名响应结构
 interface RenameResponse {
-    success: boolean;
-    message: string;
-    renamed_files: string[];
+  success: boolean;
+  message: string;
+  renamed_files: string[];
 }
 
+// Tauri 拖放事件载荷
 interface DragDropPayload {
-    paths: string[];
+  paths: string[];
 }
 
 // 视频文件扩展名列表
 const VIDEO_EXTENSIONS = [
-    ".mp4",
-    ".mkv",
-    ".avi",
-    ".mov",
-    ".wmv",
-    ".flv",
-    ".webm",
-    ".m4v",
-    ".rmvb",
-    ".3gp",
+  ".mp4",
+  ".mkv",
+  ".avi",
+  ".mov",
+  ".wmv",
+  ".flv",
+  ".webm",
+  ".m4v",
+  ".rmvb",
+  ".3gp",
 ];
 
 // 字幕文件扩展名列表
 const SUBTITLE_EXTENSIONS = [
-    ".srt",
-    ".ass",
-    ".ssa",
-    ".sub",
-    ".idx",
-    ".vtt",
-    ".txt",
-    ".smi",
-    ".sbv",
-    ".dfxp",
+  ".srt",
+  ".ass",
+  ".ssa",
+  ".sub",
+  ".idx",
+  ".vtt",
+  ".txt",
+  ".smi",
+  ".sbv",
+  ".dfxp",
 ];
 
 const App = () => {
-    const [videoFiles, setVideoFiles] = useState<FileInfo[]>([]);
-    const [subtitleFiles, setSubtitleFiles] = useState<FileInfo[]>([]);
-    const [dragging, setDragging] = useState(false);
-    const [customSuffix, setCustomSuffix] = useState("");
-    const [selectedSuffix, setSelectedSuffix] = useState("");
-    const [statusMessage, setStatusMessage] = useState<string>("");
-    const [statusType, setStatusType] = useState<"success" | "error" | "info">(
-        "info"
+  const [videoFiles, setVideoFiles] = useState<FileInfo[]>([]);
+  const [subtitleFiles, setSubtitleFiles] = useState<FileInfo[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [customSuffix, setCustomSuffix] = useState("");
+  const [selectedSuffix, setSelectedSuffix] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [messageApi, contextHolder] = message.useMessage();
+
+  // 注册 Tauri 拖放事件，仅在首次挂载时绑定
+  useEffect(() => {
+    let unlistenDrop: (() => void) | undefined;
+    let isUnmounted = false;
+
+    const setupListeners = async () => {
+      try {
+        unlistenDrop = await listen<DragDropPayload>(
+          TauriEvent.DRAG_DROP,
+          async (event) => {
+            if (isUnmounted) return;
+            setDragging(false);
+            const paths = event.payload.paths;
+            if (paths && paths.length > 0) {
+              await processDroppedPaths(paths);
+            }
+          }
+        );
+      } catch (error) {
+        console.error("Error setting up Tauri listeners:", error);
+      }
+    };
+
+    setupListeners();
+
+    return () => {
+      isUnmounted = true;
+      if (unlistenDrop) unlistenDrop();
+    };
+  }, []);
+
+  // 统一提示方法
+  const showMessage = (text: string, type: "success" | "error" | "info") => {
+    messageApi.open({ type, content: text, duration: type === "info" ? 3 : 0 });
+  };
+
+  // 从后端解析拖入路径，过滤并返回 FileInfo
+  const processDroppedPaths = async (paths: string[]) => {
+    try {
+      const fileInfos = await invoke<FileInfo[]>("get_dropped_files", { paths });
+      updateFileLists(fileInfos);
+    } catch (error) {
+      console.error("处理拖放文件时出错:", error);
+      showMessage("处理文件时出错，请重试", "error");
+    }
+  };
+
+  // 合并去重并排序，分别更新视频/字幕列表
+  const updateFileLists = (newFiles: FileInfo[]) => {
+    const newVideos = newFiles.filter((file) => file.is_video);
+    const newSubtitles = newFiles.filter((file) => !file.is_video);
+
+    if (newVideos.length === 0 && newSubtitles.length === 0) return;
+
+    setVideoFiles((prevVideos) => {
+      const allVideos = [...prevVideos, ...newVideos];
+      const uniqueVideos = Array.from(
+        new Map(allVideos.map((v) => [v.path, v])).values()
+      );
+      return uniqueVideos.sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    setSubtitleFiles((prevSubtitles) => {
+      const allSubtitles = [...prevSubtitles, ...newSubtitles];
+      const uniqueSubtitles = Array.from(
+        new Map(allSubtitles.map((s) => [s.path, s])).values()
+      );
+      return uniqueSubtitles.sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    showMessage(
+      `成功添加 ${newVideos.length} 个视频文件和 ${newSubtitles.length} 个字幕文件`,
+      "success"
     );
+  };
 
-    useEffect(() => {
-        let unlistenDrop: (() => void) | undefined;
-        let isUnmounted = false;
+  // 调用后端执行字幕重命名，使用选中的/自定义后缀
+  const handleRename = async () => {
+    if (videoFiles.length === 0 || subtitleFiles.length === 0) {
+      showMessage("请先添加视频文件和字幕文件", "error");
+      return;
+    }
 
-        console.log("Setting up Tauri event listeners...");
+    if (videoFiles.length !== subtitleFiles.length) {
+      showMessage(
+        `视频文件数量(${videoFiles.length})与字幕文件数量(${subtitleFiles.length})不匹配`,
+        "error"
+      );
+      return;
+    }
 
-        const setupListeners = async () => {
-            try {
-                unlistenDrop = await listen<DragDropPayload>(TauriEvent.DRAG_DROP, async (event) => {
-                    if (isUnmounted) return;
-                    console.log("File drop event received:", event);
-                    setDragging(false);
-                    const paths = event.payload.paths;
-                    if (paths && paths.length > 0) {
-                        console.log("Processing paths:", paths);
-                        await processDroppedPaths(paths);
-                    } else {
-                        console.log("No paths received in drop event");
-                    }
-                });
+    setLoading(true);
+    try {
+      const suffix = selectedSuffix || customSuffix;
+      const response = await invoke<RenameResponse>("rename_subtitle_files", {
+        request: {
+          video_files: videoFiles,
+          subtitle_files: subtitleFiles,
+          suffix,
+        },
+      });
 
-                console.log("Tauri event listeners set up successfully");
-            } catch (error) {
-                console.error("Error setting up Tauri listeners:", error);
-            }
-        };
+      if (response.success) {
+        showMessage(response.message, "success");
+        const updatedSubtitles = subtitleFiles.map((subtitle, index) => ({
+          ...subtitle,
+          name: response.renamed_files[index],
+        }));
+        setSubtitleFiles(updatedSubtitles);
+      } else {
+        showMessage(response.message, "error");
+      }
+    } catch (error) {
+      console.error("重命名时出错:", error);
+      showMessage("重命名时出错，请重试", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        setupListeners();
+  // 使用 Tauri 文件选择器（多选），将选择结果并入列表
+  const pickFiles = async () => {
+    try {
+      const infos = await invoke<FileInfo[]>("pick_files_and_get_info");
+      if (infos.length) updateFileLists(infos);
+    } catch (e) {
+      console.error(e);
+      showMessage("选择文件失败", "error");
+    }
+  };
 
-        return () => {
-            isUnmounted = true;
-            console.log("Cleaning up Tauri event listeners...");
-            if (unlistenDrop) unlistenDrop();
-        };
-    }, []); // 空依赖数组，确保只注册一次
+  // 清空所有已选择的文件与输入状态
+  const clearFileLists = () => {
+    setVideoFiles([]);
+    setSubtitleFiles([]);
+    setCustomSuffix("");
+    setSelectedSuffix("");
+  };
 
-    // 处理从 Tauri 拖放事件获取的路径
-    const processDroppedPaths = async (paths: string[]) => {
-        try {
-            // 调用后端获取文件信息
-            const fileInfos = await invoke<FileInfo[]>("get_dropped_files", {
-                paths,
-            });
+  // HTML5 拖放辅助：指示复制效果与显示遮罩
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  };
 
-            updateFileLists(fileInfos);
-        } catch (error) {
-            console.error("处理拖放文件时出错:", error);
-            setStatusMessage("处理文件时出错，请重试");
-            setStatusType("error");
-        }
-    };
+  // 离开主容器时取消拖拽态
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragging(false);
+  };
 
-    // 统一更新文件列表逻辑
-    const updateFileLists = (newFiles: FileInfo[]) => {
-        // 分类文件
-        const newVideos = newFiles.filter((file) => file.is_video);
-        const newSubtitles = newFiles.filter((file) => !file.is_video); // 后端已经过滤了非字幕文件
+  // 阻止默认打开行为，实际处理由 Tauri 事件完成
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+  };
 
-        if (newVideos.length === 0 && newSubtitles.length === 0) {
-            return;
-        }
+  // 预设字幕后缀选项
+  const suffixOptions = [
+    { label: "CHS", value: "CHS" },
+    { label: "CHT", value: "CHT" },
+    { label: "ENG", value: "ENG" },
+    { label: "CHS&CHT", value: "CHS&CHT" },
+    { label: "ZH", value: "ZH" },
+    { label: "JP", value: "JP" },
+  ];
 
-        // 合并现有文件并去重
-        // 注意：这里需要使用函数式更新，以确保获取到最新的 state
-        setVideoFiles((prevVideos) => {
-            const allVideos = [...prevVideos, ...newVideos];
-            const uniqueVideos = Array.from(
-                new Map(allVideos.map((v) => [v.path, v])).values()
-            );
-            return uniqueVideos.sort((a, b) => a.name.localeCompare(b.name));
-        });
-
-        setSubtitleFiles((prevSubtitles) => {
-            const allSubtitles = [...prevSubtitles, ...newSubtitles];
-            const uniqueSubtitles = Array.from(
-                new Map(allSubtitles.map((s) => [s.path, s])).values()
-            );
-            return uniqueSubtitles.sort((a, b) => a.name.localeCompare(b.name));
-        });
-
-        // 显示成功消息
-        setStatusMessage(
-            `成功添加 ${newVideos.length} 个视频文件和 ${newSubtitles.length} 个字幕文件`
-        );
-        setStatusType("success");
-
-        // 3秒后清除消息
-        setTimeout(() => {
-            setStatusMessage("");
-        }, 3000);
-    };
-
-    // 处理文件选择器（仍然受限于浏览器安全策略，无法获取完整路径，仅用于演示或非重命名操作）
-    // 注意：对于重命名功能，必须使用拖放或通过 Tauri 对话框选择文件（如果实现了的话）
-    const processFiles = async (files: FileList | File[]) => {
-        // 提示用户使用拖放以获得最佳体验
-        setStatusMessage(
-            "提示：请使用拖放方式添加文件以确保能获取完整路径进行重命名"
-        );
-        setStatusType("info");
-
-        // 仍然尝试处理，但路径可能不正确
-        try {
-            const fileArray = Array.from(files);
-            const fileInfos: FileInfo[] = [];
-
-            // 辅助函数：判断是否为视频文件
-            const isVideoFile = (fileName: string): boolean => {
-                const ext = fileName
-                    .toLowerCase()
-                    .substring(fileName.lastIndexOf("."));
-                return VIDEO_EXTENSIONS.includes(ext);
-            };
-
-            // 辅助函数：判断是否为字幕文件
-            const isSubtitleFile = (fileName: string): boolean => {
-                const ext = fileName
-                    .toLowerCase()
-                    .substring(fileName.lastIndexOf("."));
-                return SUBTITLE_EXTENSIONS.includes(ext);
-            };
-
-            for (const file of fileArray) {
-                const fileName = file.name;
-                const isVideo = isVideoFile(fileName);
-                const isSubtitle = isSubtitleFile(fileName);
-
-                if (isVideo || isSubtitle) {
-                    fileInfos.push({
-                        name: fileName,
-                        path: fileName, // 警告：这里路径是不完整的
-                        is_video: isVideo,
-                    });
-                }
-            }
-
-            updateFileLists(fileInfos);
-        } catch (error) {
-            console.error("处理文件时出错:", error);
-        }
-    };
-
-    // 处理文件选择器
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            await processFiles(e.target.files);
-            // 清空文件输入，允许重复选择相同文件
-            e.target.value = "";
-        }
-    };
-
-    // 清空文件列表
-    const clearFileLists = () => {
-        setVideoFiles([]);
-        setSubtitleFiles([]);
-        setStatusMessage("");
-        setSelectedSuffix("");
-        setCustomSuffix("");
-    };
-
-    // 处理重命名
-    const handleRename = async () => {
-        // 检查视频文件和字幕文件数量是否匹配
-        if (videoFiles.length === 0 || subtitleFiles.length === 0) {
-            setStatusMessage("请先添加视频文件和字幕文件");
-            setStatusType("error");
-            return;
-        }
-
-        if (videoFiles.length !== subtitleFiles.length) {
-            setStatusMessage(
-                `视频文件数量(${videoFiles.length})与字幕文件数量(${subtitleFiles.length})不匹配`
-            );
-            setStatusType("error");
-            return;
-        }
-
-        try {
-            // 使用选中的后缀或自定义后缀
-            const suffix = selectedSuffix || customSuffix;
-
-            // 调用Tauri后端命令执行重命名
-            const response = await invoke<RenameResponse>(
-                "rename_subtitle_files",
-                {
-                    request: {
-                        video_files: videoFiles,
-                        subtitle_files: subtitleFiles,
-                        suffix: suffix,
-                    },
-                }
-            );
-
-            if (response.success) {
-                setStatusMessage(response.message);
-                setStatusType("success");
-
-                // 更新字幕文件列表
-                const updatedSubtitles = subtitleFiles.map(
-                    (subtitle, index) => ({
-                        ...subtitle,
-                        name: response.renamed_files[index],
-                    })
-                );
-                setSubtitleFiles(updatedSubtitles);
-            } else {
-                setStatusMessage(response.message);
-                setStatusType("error");
-            }
-        } catch (error) {
-            console.error("重命名时出错:", error);
-            setStatusMessage("重命名时出错，请重试");
-            setStatusType("error");
-        }
-    };
-
-    // HTML5 拖放处理 (作为 Tauri 事件的补充和 fallback)
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        if (e.dataTransfer) {
-            e.dataTransfer.dropEffect = "copy";
-        }
-        setDragging(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        // 防止在子元素间移动时触发离开
-        if (e.currentTarget.contains(e.relatedTarget as Node)) {
-            return;
-        }
-        setDragging(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setDragging(false);
-        // 注意：实际的文件处理由 Tauri 的 file-drop 事件处理
-        // 这里主要是为了阻止浏览器默认行为（打开文件）
-    };
-
-    return (
-        <div
-            className="app"
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
+  return (
+    <ConfigProvider
+      theme={{
+        token: {
+          colorError: "#ff4d4f",
+        },
+      }}
+    >
+      {contextHolder}
+      <AntdThemeProvider>
+        <Layout
+          style={{ minHeight: "100vh", overflow: "hidden", maxHeight: "100vh" }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-            <header className="header">
-                <h1>Skyey Liner Renamer</h1>
-            </header>
-
-            <main className="main">
-                {/* 全屏拖放遮罩 */}
-                {dragging && (
-                    <div className="drop-overlay">
-                        <div className="drop-overlay-content">
-                            <p>释放文件以添加</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* 添加文件选择器和清除按钮 */}
-                <div className="control-buttons">
-                    <input
-                        type="file"
-                        id="file-input"
-                        multiple
-                        accept=".mp4,.mkv,.avi,.mov,.wmv,.flv,.webm,.m4v,.rmvb,.3gp,.srt,.ass,.ssa,.sub,.idx,.vtt,.txt,.smi,.sbv,.dfxp"
-                        onChange={handleFileSelect}
-                        style={{ display: "none" }}
-                    />
-                    <label htmlFor="file-input" className="add-files-button">
-                        选择文件
-                    </label>
-                    <button className="clear-button" onClick={clearFileLists}>
-                        清空文件列表
-                    </button>
-                </div>
-
-                <section className="file-lists">
-                    <div className="list-container">
-                        <h2>视频文件</h2>
-                        <div className="file-list">
-                            {videoFiles.length === 0 ? (
-                                <p className="empty-message">暂无视频文件</p>
-                            ) : (
-                                videoFiles.map((file, index) => (
-                                    <div key={index} className="file-item">
-                                        {file.name}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="list-container">
-                        <h2>字幕文件</h2>
-                        <div className="file-list">
-                            {subtitleFiles.length === 0 ? (
-                                <p className="empty-message">暂无字幕文件</p>
-                            ) : (
-                                subtitleFiles.map((file, index) => (
-                                    <div key={index} className="file-item">
-                                        {file.name}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </section>
-
-                <section className="rename-controls">
-                    <div className="suffix-input-area">
-                        <label htmlFor="subtitle-suffix">
-                            请输入字幕语言后缀：
-                        </label>
-                        <input
-                            id="subtitle-suffix"
-                            type="text"
-                            value={customSuffix}
-                            onChange={(e) => {
-                                setCustomSuffix(e.target.value);
-                                setSelectedSuffix("");
-                            }}
-                            placeholder="例如: CHS, CHT, ENG"
-                            className="suffix-input"
+          { /* 顶部栏：标题与操作按钮（选择文件 / 清空 / 重命名） */ }
+          <Header style={{ background: "#001529", padding: "0 24px" }}>
+            <Flex align="center" justify="space-between" style={{ height: "100%" }}>
+              <Title level={3} style={{ margin: 0, color: "#fff" }}>
+                Skyey Liner Renamer
+              </Title>
+              <Space>
+                <Button icon={<FolderOpenOutlined />} onClick={pickFiles}>
+                  选择文件
+                </Button>
+                <Button
+                  danger
+                  ghost
+                  className="clear-btn"
+                  icon={<ClearOutlined />}
+                  onClick={clearFileLists}
+                  disabled={videoFiles.length === 0 && subtitleFiles.length === 0}
+                >
+                  清空
+                </Button>
+              </Space>
+            </Flex>
+          </Header>
+          { /* 主内容：上方文件列表（占满剩余空间） + 下方设置区 */ }
+          <Content style={{ margin: "16px", display: "flex", flexDirection: "column", gap: "16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <div className="file-lists-container" style={{ flex: 1, minHeight: 0 }}>
+              { /* 文件列表区域：左右两列卡片，内部滚动 */ }
+              <Row className="file-row" gutter={[12, 0]} style={{ flex: 1, minHeight: 0 }} align="stretch">
+                <Col className="file-col file-col--video" xs={24} md={12} style={{ height: "100%" }}>
+                  <Card className="section-card" size="small"
+                    title={
+                      <Space>
+                        <PlayCircleOutlined />
+                        视频文件
+                        {videoFiles.length > 0 && (
+                          <Tag color="blue">{videoFiles.length}</Tag>
+                        )}
+                      </Space>
+                    }
+                    style={{ height: "100%" }}
+                  >
+                    <div className={`list-body ${videoFiles.length === 0 ? "empty" : ""}`} style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                      {videoFiles.length === 0 ? (
+                        <Empty description="暂无视频文件" />
+                      ) : (
+                        <List
+                          className="list-scroll"
+                          style={{ flex: 1, overflowY: "auto", width: "100%" }}
+                          size="small"
+                          bordered
+                          dataSource={videoFiles}
+                          renderItem={(item) => (
+                            <List.Item>
+                              <Text ellipsis>{item.name}</Text>
+                            </List.Item>
+                          )}
                         />
+                      )}
                     </div>
+                  </Card>
+                </Col>
 
-                    <div className="preset-buttons">
-                        <p>可选下方按钮：</p>
-                        <div className="preset-buttons-row">
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "CHS" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("CHS");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                CHS
-                            </button>
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "CHT" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("CHT");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                CHT
-                            </button>
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "ENG" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("ENG");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                ENG
-                            </button>
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "CHS&CHT" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("CHS&CHT");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                CHS&CHT
-                            </button>
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "ZH" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("ZH");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                ZH
-                            </button>
-                            <button
-                                className={`preset-button ${
-                                    selectedSuffix === "JP" ? "active" : ""
-                                }`}
-                                onClick={() => {
-                                    setSelectedSuffix("JP");
-                                    setCustomSuffix("");
-                                }}
-                            >
-                                JP
-                            </button>
-                        </div>
+                <Col className="file-col file-col--subtitle" xs={24} md={12} style={{ height: "100%" }}>
+                  <Card className="section-card" size="small"
+                    title={
+                      <Space>
+                        <FileTextOutlined />
+                        字幕文件
+                        {subtitleFiles.length > 0 && (
+                          <Tag color="green">{subtitleFiles.length}</Tag>
+                        )}
+                      </Space>
+                    }
+                    style={{ height: "100%" }}
+                  >
+                    <div className={`list-body ${subtitleFiles.length === 0 ? "empty" : ""}`} style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                      {subtitleFiles.length === 0 ? (
+                        <Empty description="暂无字幕文件" />
+                      ) : (
+                        <List
+                          className="list-scroll"
+                          style={{ flex: 1, overflowY: "auto", width: "100%" }}
+                          size="small"
+                          bordered
+                          dataSource={subtitleFiles}
+                          renderItem={(item) => (
+                            <List.Item>
+                              <Text ellipsis>{item.name}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      )}
                     </div>
+                  </Card>
+                </Col>
+              </Row>
+            </div>
 
-                    <button
-                        className="rename-button"
-                        onClick={handleRename}
-                        title="Ctrl+R"
+            { /* 分隔线 */ }
+            <Divider style={{ margin: "8px 0" }} />
+
+            { /* 字幕后缀设置与执行 */ }
+            <Card title="字幕语言后缀设置" size="small">
+              <Row gutter={[24, 24]} align="bottom">
+                <Col xs={24} md={6}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Text>自定义后缀</Text>
+                    <Input
+                      placeholder="例如: CHS, CHT, ENG"
+                      value={customSuffix}
+                      onChange={(e) => {
+                        setCustomSuffix(e.target.value);
+                        setSelectedSuffix("");
+                      }}
+                    />
+                  </Space>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Text>快速选择</Text>
+                    <Segmented
+                      options={suffixOptions}
+                      value={selectedSuffix || undefined}
+                      onChange={(val) => {
+                        setSelectedSuffix(val as string);
+                        setCustomSuffix("");
+                      }}
+                      block
+                    />
+                  </Space>
+                </Col>
+                <Col xs={24} md={10}>
+                  <Tooltip title="Ctrl+R">
+                    <Button
+                      type="primary"
+                      icon={<ReloadOutlined />}
+                      loading={loading}
+                      onClick={handleRename}
+                      block
                     >
-                        执行重命名(Ctrl+R)
-                    </button>
-                    {statusMessage && (
-                        <div className={`status-message status-${statusType}`}>
-                            {statusMessage}
-                        </div>
-                    )}
-                </section>
-            </main>
-        </div>
-    );
+                      执行重命名
+                    </Button>
+                  </Tooltip>
+                </Col>
+              </Row>
+            </Card>
+          </Content>
+
+          {dragging && (
+            <div className="drop-overlay">
+              <div className="drop-overlay-content">
+                <UploadOutlined style={{ fontSize: 64 }} />
+                <Title level={2} style={{ marginTop: 16 }}>
+                  释放文件以添加
+                </Title>
+              </div>
+            </div>
+          )}
+        </Layout>
+      </AntdThemeProvider>
+    </ConfigProvider>
+  );
 };
 
 export default App;

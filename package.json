@@ -10,7 +10,9 @@
     "tauri": "tauri dev"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.0",
     "@tauri-apps/api": "^2.9.0",
+    "antd": "^6.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

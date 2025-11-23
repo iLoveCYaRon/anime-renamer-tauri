@@ -181,6 +181,36 @@ async fn rename_subtitle_files(request: RenameRequest) -> Result<RenameResponse,
     })
 }
 
+use tauri_plugin_dialog::DialogExt;
+
+#[tauri::command]
+async fn pick_files_and_get_info(app: tauri::AppHandle) -> Result<Vec<FileInfo>, String> {
+    let files = app
+        .dialog()
+        .file()
+        .add_filter("视频/字幕", &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "rmvb", "3gp", "srt", "ass", "ssa", "sub", "idx", "vtt", "txt", "smi", "sbv", "dfxp"])
+        .blocking_pick_files();   // 多选
+
+    let mut infos = Vec::new();
+    if let Some(paths) = files {
+        for path in paths {
+            let path_buf = path.as_path().unwrap();
+            if let Some(name) = path_buf.file_name().and_then(|n| n.to_str()) {
+                let is_video = is_video_file(name);
+                let is_sub = is_subtitle_file(name);
+                if is_video || is_sub {
+                    infos.push(FileInfo {
+                        name: name.to_string(),
+                        path: path_buf.to_string_lossy().to_string(),
+                        is_video,
+                    });
+                }
+            }
+        }
+    }
+    Ok(infos)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -195,9 +225,11 @@ pub fn run() {
       Ok(())
     })
     .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
         get_dropped_files,
-        rename_subtitle_files
+        rename_subtitle_files,
+        pick_files_and_get_info
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
