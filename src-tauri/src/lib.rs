@@ -211,6 +211,60 @@ async fn pick_files_and_get_info(app: tauri::AppHandle) -> Result<Vec<FileInfo>,
     Ok(infos)
 }
 
+// 选择文件夹并递归扫描视频/字幕文件
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DirectoryPickResult {
+    pub files: Vec<FileInfo>,
+    pub canceled: bool,
+}
+
+#[tauri::command]
+async fn pick_directory_and_get_info(app: tauri::AppHandle) -> Result<DirectoryPickResult, String> {
+    let dir = rfd::FileDialog::new().pick_folder();
+    let mut infos: Vec<FileInfo> = Vec::new();
+
+    // 递归扫描函数
+    fn scan_dir(root: &std::path::Path, infos: &mut Vec<FileInfo>, depth: usize, max_depth: usize) -> std::io::Result<()> {
+        for entry in fs::read_dir(root)? {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                // 深度控制：仅在未超过最大深度时才递归
+                if depth < max_depth {
+                    scan_dir(&p, infos, depth + 1, max_depth)?;
+                }
+            } else if p.is_file() {
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    let is_video = is_video_file(name);
+                    let is_sub = is_subtitle_file(name);
+                    if is_video || is_sub {
+                        infos.push(FileInfo {
+                            name: name.to_string(),
+                            path: p.to_string_lossy().to_string(),
+                            is_video,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // 用户取消选择：返回 canceled=true，files 为空
+    if dir.is_none() {
+        return Ok(DirectoryPickResult { files: Vec::new(), canceled: true });
+    }
+
+    if let Some(root) = dir.as_ref() {
+        // 仅处理指定目录（不递归子目录），如需递归可将 max_depth > 0
+        let max_depth: usize = 0; // 0 表示只扫描当前目录
+        if let Err(e) = scan_dir(root.as_path(), &mut infos, 0, max_depth) {
+            return Err(format!("扫描文件夹失败: {}", e));
+        }
+    }
+
+    Ok(DirectoryPickResult { files: infos, canceled: false })
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -229,7 +283,8 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
         get_dropped_files,
         rename_subtitle_files,
-        pick_files_and_get_info
+        pick_files_and_get_info,
+        pick_directory_and_get_info
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
