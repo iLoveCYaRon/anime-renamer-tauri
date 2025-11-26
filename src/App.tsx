@@ -32,11 +32,15 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   UploadOutlined,
+  HomeOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import "./App.css";
+import Welcome from "./pages/Welcome";
 
 // Ant Design 结构与排版
-const { Header, Content } = Layout;
+const { Header, Content, Sider } = Layout;
 const { Title, Text } = Typography;
 
 // 前端与后端共享的文件信息结构
@@ -66,13 +70,19 @@ const App = () => {
   const [selectedSuffix, setSelectedSuffix] = useState("");
   const [loading, setLoading] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  // 页面导航状态：welcome | rename
+  const [activePage, setActivePage] = useState<"welcome" | "rename">("welcome");
+  // 侧边栏折叠状态
+  const [collapsed, setCollapsed] = useState<boolean>(true);
+  // 页面切换过渡控制
+  const [pageAnimKey, setPageAnimKey] = useState<number>(0);
   // 基于剧集对齐展示与缺失状态
   const [episodeItems, setEpisodeItems] = useState<
     { episode: string; video?: FileInfo; subtitle?: FileInfo }[]
   >([]);
   const [missingEpisodes, setMissingEpisodes] = useState<string[]>([]);
   // 正则配置：默认用于提取剧集编号（捕获组1）
-  const defaultEpisodeRegex = "(?:^|[^0-9])(\\d{2})(?!\\d)";
+  const defaultEpisodeRegex = "\\[(\\d{2})\\]";
   const [episodeRegexStr, setEpisodeRegexStr] = useState<string>(defaultEpisodeRegex);
   const [episodeRegexError, setEpisodeRegexError] = useState<boolean>(false);
   const [episodeRegex, setEpisodeRegex] = useState<RegExp>(() => new RegExp(defaultEpisodeRegex));
@@ -84,6 +94,11 @@ const App = () => {
   const leftScrollRef = React.useRef<HTMLDivElement | null>(null);
   const rightScrollRef = React.useRef<HTMLDivElement | null>(null);
   const syncingRef = React.useRef(false);
+
+  // 页面切换时触发轻量入场动画
+  useEffect(() => {
+    setPageAnimKey((k) => k + 1);
+  }, [activePage]);
 
   // 注册 Tauri 拖放事件，仅在首次挂载时绑定
   useEffect(() => {
@@ -401,59 +416,120 @@ const App = () => {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {/* 侧边导航栏 */}
+          <Sider
+            collapsible
+            collapsed={collapsed}
+            onCollapse={(c) => setCollapsed(c)}
+            width={220}
+            style={{ background: "var(--ant-color-bg-container)" }}
+          >
+            <div style={{ padding: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
+              />
+              {!collapsed && (
+                <Text style={{ color: "var(--ant-color-text)", fontWeight: 600 }}>Linear Renamer</Text>
+              )}
+            </div>
+            <div style={{ padding: 8 }}>
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Button
+                  type={activePage === "welcome" ? "primary" : "text"}
+                  icon={<HomeOutlined />}
+                  block
+                  onClick={() => setActivePage("welcome")}
+                >
+                  {collapsed ? null : "欢迎页"}
+                </Button>
+                <Button
+                  type={activePage === "rename" ? "primary" : "text"}
+                  icon={<FileTextOutlined />}
+                  block
+                  onClick={() => setActivePage("rename")}
+                >
+                  {collapsed ? null : "字幕重命名"}
+                </Button>
+              </Space>
+            </div>
+          </Sider>
+
+          {/* 主体区域 */}
+          <Layout>
           { /* 顶部栏：标题与操作按钮（选择文件 / 清空 / 重命名） */ }
           <Header style={{ background: "var(--ant-color-bg-container)", padding: "0 16px" }}>
             <Flex align="center" justify="space-between" style={{ height: "100%" }}>
-              <Title level={3} style={{ margin: 0, color: "var(--ant-color-text)" }}>
-                Linear Renamer
-              </Title>
               <Space>
-                <Button icon={<FolderOpenOutlined />} onClick={pickFiles}>
-                  选择文件
-                </Button>
-                <Button icon={<FolderOutlined />} onClick={pickFolder}>
-                  选择文件夹
-                </Button>
                 <Button
-                  danger
-                  ghost
-                  className="clear-btn"
-                  icon={<ClearOutlined />}
-                  onClick={clearFileLists}
-                  disabled={videoFiles.length === 0 && subtitleFiles.length === 0}
-                >
-                  清空
-                </Button>
+                  type="text"
+                  icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                  onClick={() => setCollapsed(!collapsed)}
+                />
+                <Title level={3} style={{ margin: 0, color: "var(--ant-color-text)" }}>
+                  {activePage === "welcome" ? "Linear Renamer" : "字幕重命名"}
+                </Title>
               </Space>
+              {activePage === "rename" ? (
+                <Space>
+                  <Button icon={<FolderOpenOutlined />} onClick={pickFiles}>
+                    选择文件
+                  </Button>
+                  <Button icon={<FolderOutlined />} onClick={pickFolder}>
+                    选择文件夹
+                  </Button>
+                  <Button
+                    danger
+                    ghost
+                    className="clear-btn"
+                    icon={<ClearOutlined />}
+                    onClick={clearFileLists}
+                    disabled={videoFiles.length === 0 && subtitleFiles.length === 0}
+                  >
+                    清空
+                  </Button>
+                </Space>
+              ) : (
+                <Space>
+                  <Button type="primary" onClick={() => setActivePage("rename")}>开始重命名</Button>
+                </Space>
+              )}
             </Flex>
           </Header>
           { /* 主内容：上方文件列表（占满剩余空间） + 下方设置区 */ }
           <Content style={{ margin: "16px", display: "flex", flexDirection: "column", gap: "16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {activePage === "welcome" && (
+              <Welcome onStart={() => setActivePage("rename")} />
+            )}
+            {activePage === "rename" && (
+            <div className="rename-layout">
             {/* 自定义匹配正则 */}
             <Space orientation="vertical" style={{ width: "100%" }}>
               <Text>匹配正则表达式（捕获组1为剧集编号）</Text>
-              <Space.Compact block size="small">
-                <Input
-                  size="small"
-                  status={episodeRegexError ? "error" : undefined}
-                  value={episodeRegexStr}
-                  onChange={(e) => setEpisodeRegexStr(e.target.value)}
-                  placeholder="例如: (?:^|[^0-9])(\\d{2})(?!\\d)"
-                />
-                <Button size="small" onClick={() => setEpisodeRegexStr(defaultEpisodeRegex)}>重置</Button>
-              </Space.Compact>
-              {/* 预设切换 */}
-              <Segmented
-                options={[
-                  { label: "两位数字", value: "(?:^|[^0-9])(\\d{2})(?!\\d)" },
-                  { label: "SxxEyy", value: "S\\d{1,2}E(\\d{2})" },
-                  { label: "Eyy/epyy", value: "[Ee][Pp]?(\\d{2})" },
-                  { label: "第yy集", value: "第(\\d{2})[集话]" },
-                ]}
-                value={episodeRegexStr}
-                onChange={(val) => setEpisodeRegexStr(String(val))}
-                block
-              />
+                  <Space.Compact block size="middle">
+                    <Input
+                      size="middle"
+                      status={episodeRegexError ? "error" : undefined}
+                      value={episodeRegexStr}
+                      onChange={(e) => setEpisodeRegexStr(e.target.value)}
+                      placeholder="例如: (?:^|[^0-9])(\\d{2})(?!\\d)"
+                    />
+                    <Button size="middle" onClick={() => setEpisodeRegexStr(defaultEpisodeRegex)}>重置</Button>
+                  </Space.Compact>
+                  {/* 预设切换 */}
+                    <Segmented
+                      options={[
+                        { label: "[xx]", value: "\\[(\\d{2})\\]" },
+                        { label: "xx", value: "(?:^|[^0-9])(\\d{2})(?!\\d)" },
+                        { label: "SxxEyy", value: "S\\d{1,2}E(\\d{2})" },
+                        { label: "Eyy/epyy", value: "[Ee][Pp]?(\\d{2})" },
+                        { label: "第yy集", value: "第(\\d{2})[集话]" },
+                      ]}
+                    value={episodeRegexStr}
+                    onChange={(val) => setEpisodeRegexStr(String(val))}
+                    block
+                  />
             </Space>
             <div className="file-lists-container" style={{ flex: 1, minHeight: 0 }}>
               { /* 文件列表区域：左右两列卡片，内部滚动 */ }
@@ -563,28 +639,39 @@ const App = () => {
 
             { /* 字幕后缀设置与执行 */ }
             <Card title="字幕语言后缀设置" size="small">
-              <Row gutter={[24, 24]} align="bottom">
-                <Col xs={24} md={6}>
+              <Row gutter={[16, 16]} align="middle">
+                {/* 自定义后缀输入：占满剩余横向空间 */}
+                <Col xs={24} flex="auto">
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Text>自定义后缀</Text>
-                    <Space.Compact block size="middle">
-                      <Input
-                        size="middle"
-                        placeholder="例如: chs 或 cht"
-                        value={customSuffix}
-                        onChange={(e) => {
-                          setCustomSuffix(e.target.value);
-                          setSelectedSuffix("");
-                        }}
-                      />
-                      <Button size="middle" onClick={() => setCustomSuffix("")}>清空输入</Button>
-                    </Space.Compact>
+                    <Input
+                      size="middle"
+                      placeholder="例如: chs 或 cht"
+                      value={customSuffix}
+                      onChange={(e) => {
+                        setCustomSuffix(e.target.value);
+                        setSelectedSuffix("");
+                      }}
+                    />
                   </Space>
                 </Col>
-                <Col xs={24} md={8}>
-                  <Space direction="vertical" style={{ width: "100%" }}>
+
+                {/* 快速选择与执行按钮同一行 */}
+                <Col xs={24} flex="none">
+                  <Space direction="vertical">
                     <Text>快速选择</Text>
                     <Space wrap>
+                      <Button
+                        key="none"
+                        size="middle"
+                        type={customSuffix.trim() === "" ? "primary" : "default"}
+                        onClick={() => {
+                          setCustomSuffix("");
+                          setSelectedSuffix("");
+                        }}
+                      >
+                        无
+                      </Button>
                       {suffixOptions.map((opt) => (
                         <Button
                           key={opt.value}
@@ -598,24 +685,25 @@ const App = () => {
                           {opt.label}
                         </Button>
                       ))}
+                      <Tooltip title="Ctrl+R">
+                        <Button
+                          size="middle"
+                          type="primary"
+                          icon={<ReloadOutlined />}
+                          loading={loading}
+                          onClick={handleRename}
+                          className="rename-btn-wide"
+                        >
+                          执行重命名
+                        </Button>
+                      </Tooltip>
                     </Space>
                   </Space>
                 </Col>
-                <Col xs={24} md={10}>
-                  <Tooltip title="Ctrl+R">
-                    <Button
-                      type="primary"
-                      icon={<ReloadOutlined />}
-                      loading={loading}
-                      onClick={handleRename}
-                      block
-                    >
-                      执行重命名
-                    </Button>
-                  </Tooltip>
-                </Col>
               </Row>
             </Card>
+            </div>
+            )}
           </Content>
 
           {dragging && (
@@ -629,6 +717,7 @@ const App = () => {
             </div>
           )}
         </Layout>
+      </Layout>
     </ConfigProvider>
   );
 };

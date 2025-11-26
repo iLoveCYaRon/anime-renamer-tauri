@@ -120,6 +120,18 @@ html, body, #root {
   width: 100%;
 }
 
+/* 重命名页布局：上方参数区域 / 中部列表 / 下方设置 */
+.rename-layout {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  row-gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.rename-layout .file-lists-container {
+  min-height: 0;
+}
+
 /* 重命名预览样式 */
 .rename-connect-row {
   display: flex;
@@ -158,4 +170,29 @@ html, body, #root {
 .clear-btn:disabled {
   color: var(--ant-color-text-secondary);
   border-color: var(--ant-color-border);
+}
+
+/* 页面切换过渡效果 */
+.page-container {
+  animation: fadeSlideIn 220ms ease;
+}
+
+/* 执行重命名按钮加宽（约为快速选择按钮宽度的2倍） */
+.rename-btn-wide {
+  min-width: 240px;
+}
+@media (max-width: 768px) {
+  .rename-btn-wide {
+    min-width: 100%;
+  }
+}
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
