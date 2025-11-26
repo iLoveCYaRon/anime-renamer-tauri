@@ -1,10 +1,10 @@
 import React from "react";
 import { Card, Typography, Space, Button, Tag } from "antd";
-import { HomeOutlined, FileTextOutlined, FolderOpenOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { HomeOutlined, FileTextOutlined, FolderOpenOutlined, PlayCircleOutlined, RobotOutlined } from "@ant-design/icons";
 
 const { Title, Paragraph, Text } = Typography;
 
-const Welcome = ({ onStart }: { onStart: () => void }) => {
+const Welcome = ({ onStart, onLLMRecognition }: { onStart: () => void; onLLMRecognition?: () => void }) => {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1 }}>
       <Card style={{ maxWidth: 860, width: "100%" }}>
@@ -20,7 +20,7 @@ const Welcome = ({ onStart }: { onStart: () => void }) => {
 
           <div>
             <Title level={5} style={{ marginTop: 8 }}>主要功能</Title>
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <Space size={8}>
                 <FolderOpenOutlined />
                 <Text>支持拖放与文件/文件夹选择，自动识别视频与字幕文件</Text>
@@ -43,8 +43,21 @@ const Welcome = ({ onStart }: { onStart: () => void }) => {
             </Paragraph>
           </div>
 
+          <div>
+            <Title level={5} style={{ marginTop: 8 }}>新功能</Title>
+            <Space orientation="vertical" style={{ width: "100%" }}>
+              <Space size={8}>
+                <RobotOutlined />
+                <Text>新增LLM模型识别功能，可智能解析动画视频文件名信息</Text>
+              </Space>
+            </Space>
+          </div>
+
           <Space>
             <Button type="primary" size="large" onClick={onStart}>开始使用字幕重命名</Button>
+            {onLLMRecognition && (
+              <Button size="large" icon={<RobotOutlined />} onClick={onLLMRecognition}>LLM模型识别</Button>
+            )}
             <Button size="large" onClick={onStart}>我已了解，进入功能页</Button>
           </Space>
         </Space>

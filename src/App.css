@@ -196,3 +196,13 @@ html, body, #root {
     transform: translateY(0);
   }
 }
+
+.llm-config-card {
+  height: clamp(200px, 22vh, 280px);
+  max-height: 280px;
+  overflow: hidden;
+}
+.llm-config-card .ant-card-body {
+  overflow-y: auto;
+  min-height: 0;
+}

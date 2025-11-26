@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::Path;
+use serde_json;
+use std::time::Duration;
 
 // 文件信息结构体
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -23,6 +25,36 @@ pub struct RenameResponse {
     pub success: bool,
     pub message: String,
     pub renamed_files: Vec<String>,
+}
+
+// LLM请求结构体
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LLMRequest {
+    pub filename: String,
+    pub model_url: String,
+    pub model_name: String,
+}
+
+// 动画信息结构体
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AnimeInfo {
+    pub title: String,
+    pub season: u32,
+    pub episode: u32,
+    pub special_type: Option<String>, // "SP", "OVA", "Movie"
+    pub resolution: String,
+    pub codec: String,
+    pub group: String,
+    pub language_tags: Vec<String>,
+    pub confidence: f32, // 0.0 to 1.0
+}
+
+// LLM响应结构体
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LLMResponse {
+    pub success: bool,
+    pub data: Option<AnimeInfo>,
+    pub error: Option<String>,
 }
 
 // 获取文件扩展名
@@ -265,6 +297,96 @@ async fn pick_directory_and_get_info(app: tauri::AppHandle) -> Result<DirectoryP
 
     Ok(DirectoryPickResult { files: infos, canceled: false })
 }
+
+// 分析文件名，调用LLM模型
+#[tauri::command]
+async fn analyze_filename(request: LLMRequest) -> Result<LLMResponse, String> {
+    // 构建OpenAI风格的请求体
+    let request_body = serde_json::json!({
+        "model": request.model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": "你是一个动画视频文件信息提取专家。请从文件名中提取动画信息并以JSON格式返回。请严格按照以下格式返回：{\"title\": \"动画标题\", \"season\": 季数, \"episode\": 集数, \"special_type\": null或\"SP\"/\"OVA\"/\"Movie\", \"resolution\": \"分辨率\", \"codec\": \"编码格式\", \"group\": \"字幕组\", \"language_tags\": [\"语言标签\"], \"confidence\": 0.95}。confidence表示你对识别结果的信心度，范围0-1。"
+            },
+            {
+                "role": "user", 
+                "content": format!("请分析这个动画文件名：{}", request.filename)
+            }
+        ],
+        "temperature": 0.1,
+        "max_tokens": 500
+    });
+
+    // 创建HTTP客户端
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    // 发送请求到LLM模型
+    let response = client
+        .post(&request.model_url)
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("请求LLM模型失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Ok(LLMResponse {
+            success: false,
+            data: None,
+            error: Some(format!("LLM模型返回错误状态码: {}", response.status())),
+        });
+    }
+
+    // 解析响应
+    let response_json: serde_json::Value = response.json().await
+        .map_err(|e| format!("解析LLM响应失败: {}", e))?;
+
+    // 提取content字段
+    let content = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or("无法从LLM响应中提取内容")?;
+
+    // 尝试解析JSON响应
+    match serde_json::from_str::<AnimeInfo>(content) {
+        Ok(anime_info) => {
+            Ok(LLMResponse {
+                success: true,
+                data: Some(anime_info),
+                error: None,
+            })
+        },
+        Err(e) => {
+            // 如果直接解析失败，尝试清理响应并重新解析
+            let cleaned_content = content
+                .trim()
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+            
+            match serde_json::from_str::<AnimeInfo>(cleaned_content) {
+                Ok(anime_info) => {
+                    Ok(LLMResponse {
+                        success: true,
+                        data: Some(anime_info),
+                        error: None,
+                    })
+                },
+                Err(_) => {
+                    Ok(LLMResponse {
+                        success: false,
+                        data: None,
+                        error: Some(format!("解析LLM响应格式失败: {}", content)),
+                    })
+                }
+            }
+        }
+    }
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -284,7 +406,8 @@ pub fn run() {
         get_dropped_files,
         rename_subtitle_files,
         pick_files_and_get_info,
-        pick_directory_and_get_info
+        pick_directory_and_get_info,
+        analyze_filename
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
