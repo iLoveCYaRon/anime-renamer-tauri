@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import './llm-recognition.css';
-import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input } from 'antd';
+import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input, Row, Col } from 'antd';
 import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { FileInfo, RecognitionResult } from '../types/llm';
 import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail } from '../api/tauri';
@@ -14,56 +14,59 @@ interface FileItemProps {
 
 function FileItem({ file, result, onAnalyze }: FileItemProps) {
   const { Text } = Typography;
-  const renderTags = (res: RecognitionResult | null) => {
-    if (!res || !res.info) return null;
+  const ext = (name: string) => {
+    const i = name.lastIndexOf('.');
+    return i >= 0 ? name.slice(i) : '';
+  };
+  const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
+  const buildPreview = (f: FileInfo, res: RecognitionResult | null) => {
+    if (!res || !res.info) return '';
     const info = res.info;
+    const group = info.group ? `[${info.group}] ` : '';
+    const title = info.title.trim();
+    const epPart = info.special_type
+      ? `${info.special_type}${pad2(info.episode)}`
+      : `S${pad2(info.season)}E${pad2(info.episode)}`;
+    const reso = info.resolution ? ` [${info.resolution}]` : '';
+    const codec = info.codec ? ` [${info.codec}]` : '';
+    const langs = (info.language_tags || []).map(t => ` [${t}]`).join('');
+    const base = `${group}${title} - ${epPart}${reso}${codec}${langs}`;
+    return `${base}${ext(f.name)}`;
+  };
+  const renderMetaLine = (res: RecognitionResult | null) => {
+    const info = res?.info || null;
     return (
-      <div style={{ marginTop: 8 }}>
-        <Space size="small" wrap>
-          <Tag color="blue">{info.title}</Tag>
-          <Tag color="green">S{info.season}E{info.episode}</Tag>
-          {info.special_type && <Tag color="orange">{info.special_type}</Tag>}
-          <Tag color="purple">{info.resolution}</Tag>
-          <Tag color="cyan">{info.codec}</Tag>
-          <Tag color="magenta">{info.group}</Tag>
-          {info.language_tags.map((tag, index) => (
-            <Tag key={index} color="gold">{tag}</Tag>
-          ))}
-          <Tag color={info.confidence > 0.8 ? "success" : "warning"}>
-            置信度 {(info.confidence * 100).toFixed(1)}%
-          </Tag>
-        </Space>
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {info && (
+          <Space size="small" wrap>
+            <Tag color="blue">{info.title}</Tag>
+            <Tag color="green">{info.special_type ? info.special_type : `S${pad2(info.season)}E${pad2(info.episode)}`}</Tag>
+            {info.resolution && <Tag color="purple">{info.resolution}</Tag>}
+            {info.codec && <Tag color="cyan">{info.codec}</Tag>}
+            {info.group && <Tag color="magenta">{info.group}</Tag>}
+            {(info.language_tags || []).map((tag, index) => (
+              <Tag key={index} color="gold">{tag}</Tag>
+            ))}
+            <Tag color={info.confidence > 0.8 ? 'success' : 'warning'}>
+              置信度 {(info.confidence * 100).toFixed(1)}%
+            </Tag>
+          </Space>
+        )}
+        {res?.error && (
+          <Text type="danger">{res.error}</Text>
+        )}
       </div>
     );
   };
 
   return (
-    <List.Item
-      actions={[
-        <Button
-          aria-label="识别此视频文件"
-          type="primary"
-          size="small"
-          onClick={() => onAnalyze(file)}
-          loading={result?.loading}
-          disabled={!file.is_video}
-        >
-          识别
-        </Button>,
-      ]}
-    >
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
-        <Space>
-          <Tag>{file.is_video ? 'VIDEO' : 'SUB'}</Tag>
-          <Text ellipsis>{file.name}</Text>
-        </Space>
-        <Text type="secondary" ellipsis>{file.path}</Text>
-        {renderTags(result)}
-        {result?.error && (
-          <Text type="danger" style={{ marginTop: 6 }}>{result.error}</Text>
-        )}
+        <Text ellipsis>{file.path}</Text>
+        <Text ellipsis>{buildPreview(file, result) || '暂无预览'}</Text>
+        {renderMetaLine(result)}
       </div>
-    </List.Item>
+
   );
 }
 
@@ -89,10 +92,12 @@ export default function LLMRecognition() {
     init();
   }, []);
 
+  const sortFiles = (arr: FileInfo[]) => arr.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
   const handlePickFiles = async () => {
     try {
       const pickedFiles = await pickFilesAndGetInfo();
-      setFiles(prev => [...prev, ...pickedFiles]);
+      setFiles(prev => sortFiles([...prev, ...pickedFiles]));
       message.success(`成功选择 ${pickedFiles.length} 个文件`);
     } catch (error) {
       message.error(`选择文件失败: ${error}`);
@@ -103,7 +108,7 @@ export default function LLMRecognition() {
     try {
       const result = await pickDirectoryAndGetInfo();
       if (!result.canceled) {
-        setFiles(prev => [...prev, ...result.files]);
+        setFiles(prev => sortFiles([...prev, ...result.files]));
         message.success(`成功导入 ${result.files.length} 个文件`);
       }
     } catch (error) {
@@ -364,7 +369,7 @@ export default function LLMRecognition() {
         }
         extra={
           files.length > 0 ? (
-            <Button size="small" danger onClick={handleClearFiles} aria-label="清空文件列表">清空</Button>
+            <Button style={{height: 28}} type="primary" danger onClick={handleClearFiles} aria-label="清空文件列表">清空</Button>
           ) : null
         }
       >
@@ -373,19 +378,19 @@ export default function LLMRecognition() {
             <List locale={{ emptyText: '暂无文件' }} />
           ) : (
             <div className="list-scroll" style={{ flex: 1, overflowY: 'auto', width: '100%' }}>
-              <List<FileInfo>
-                size="small"
-                bordered
-                dataSource={files}
-                renderItem={(file) => (
-                  <FileItem
-                    key={file.path}
-                    file={file}
-                    result={results.get(file.path) || null}
-                    onAnalyze={handleAnalyze}
-                  />
-                )}
-              />
+              <Row gutter={[8, 8]}>
+                {files.map((file) => (
+                  <Col span={24} key={file.path}>
+                    <div className="row-item">
+                      <FileItem
+                        file={file}
+                        result={results.get(file.path) || null}
+                        onAnalyze={handleAnalyze}
+                      />
+                    </div>
+                  </Col>
+                ))}
+              </Row>
             </div>
           )}
         </div>

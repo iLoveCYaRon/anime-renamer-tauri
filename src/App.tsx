@@ -117,18 +117,18 @@ const App = () => {
           {/* 主体区域 */}
           <Layout>
           <Content style={{ margin: "16px", display: "flex", flexDirection: "column", gap: "16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {activePage === "welcome" && (
+            <div style={{ display: activePage === "welcome" ? "block" : "none", flex: 1, minHeight: 0 }}>
               <Welcome onStart={() => setActivePage("rename")} onLLMRecognition={() => setActivePage("llm-recognition")} />
-            )}
-            {activePage === "llm-recognition" && (
+            </div>
+            <div style={{ display: activePage === "llm-recognition" ? "block" : "none", flex: 1, minHeight: 0 }}>
               <LLMRecognition />
-            )}
-            {activePage === "rename" && (
+            </div>
+            <div style={{ display: activePage === "rename" ? "block" : "none", flex: 1, minHeight: 0 }}>
               <Rename />
-            )}
-            {activePage === "settings" && (
+            </div>
+            <div style={{ display: activePage === "settings" ? "block" : "none", flex: 1, minHeight: 0 }}>
               <SettingsPage />
-            )}
+            </div>
           </Content>
 
           
