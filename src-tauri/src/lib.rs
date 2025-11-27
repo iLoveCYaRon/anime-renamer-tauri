@@ -2,6 +2,8 @@ use std::fs;
 use std::path::Path;
 use serde_json;
 use std::time::Duration;
+use std::path::PathBuf;
+use std::io::Write;
 
 // 文件信息结构体
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -55,6 +57,62 @@ pub struct LLMResponse {
     pub success: bool,
     pub data: Option<AnimeInfo>,
     pub error: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct BangumiSubject {
+    pub id: i64,
+    pub name: String,
+    pub name_cn: Option<String>,
+    #[serde(rename = "type")]
+    pub subject_type: Option<i32>,
+    pub date: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct BangumiSubjectDetail {
+    pub id: i64,
+    pub name: String,
+    pub name_cn: Option<String>,
+    pub cover_url: Option<String>,
+    pub episodes: Option<i32>,
+    pub year: Option<i32>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct Settings {
+    pub episode_regex: String,
+    pub model_url: String,
+    pub model_name: String,
+}
+
+fn settings_path() -> Result<PathBuf, String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("获取当前运行目录失败: {}", e))?;
+    Ok(cwd.join("settings.json"))
+}
+
+#[tauri::command]
+async fn load_settings() -> Result<Settings, String> {
+    let path = settings_path()?;
+    if !path.exists() {
+        return Ok(Settings {
+            episode_regex: "\\[(\\d{2})\\]".to_string(),
+            model_url: "http://localhost:11434/v1/chat/completions".to_string(),
+            model_name: "qwen2.5:7b".to_string(),
+        });
+    }
+    let content = fs::read_to_string(&path).map_err(|e| format!("读取设置失败: {}", e))?;
+    let s: Settings = serde_json::from_str(&content).map_err(|e| format!("解析设置失败: {}", e))?;
+    Ok(s)
+}
+
+#[tauri::command]
+async fn save_settings(settings: Settings) -> Result<bool, String> {
+    let path = settings_path()?;
+    let json = serde_json::to_string_pretty(&settings).map_err(|e| format!("序列化设置失败: {}", e))?;
+    let mut f = fs::File::create(&path).map_err(|e| format!("创建设置文件失败: {}", e))?;
+    f.write_all(json.as_bytes()).map_err(|e| format!("写入设置失败: {}", e))?;
+    Ok(true)
 }
 
 // 获取文件扩展名
@@ -387,6 +445,102 @@ async fn analyze_filename(request: LLMRequest) -> Result<LLMResponse, String> {
         }
     }
 }
+
+#[tauri::command]
+async fn search_bangumi_subjects(query: String, limit: Option<usize>) -> Result<Vec<BangumiSubject>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let max = limit.unwrap_or(10);
+    let encoded = urlencoding::encode(q);
+    let url = format!(
+        "https://api.bgm.tv/search/subject/{}?type=2&responseGroup=small&max_results={}",
+        encoded, max
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    let resp = client.get(url).send().await.map_err(|e| format!("请求Bangumi失败: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Bangumi返回错误状态码: {}", resp.status()));
+    }
+
+    let v: serde_json::Value = resp.json().await.map_err(|e| format!("解析Bangumi响应失败: {}", e))?;
+
+    let mut items: Vec<BangumiSubject> = Vec::new();
+    if let Some(list) = v.get("list").and_then(|x| x.as_array()) {
+        for it in list {
+            let id = it.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+            let name = it.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let name_cn = it.get("name_cn").and_then(|x| x.as_str()).map(|s| s.to_string());
+            let subject_type = it.get("type").and_then(|x| x.as_i64()).map(|n| n as i32);
+            let date = it.get("date").or_else(|| it.get("air_date")).and_then(|x| x.as_str()).map(|s| s.to_string());
+            if id != 0 && !name.is_empty() {
+                items.push(BangumiSubject { id, name, name_cn, subject_type, date });
+            }
+        }
+    } else if let Some(arr) = v.as_array() {
+        for it in arr {
+            let id = it.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+            let name = it.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let name_cn = it.get("name_cn").and_then(|x| x.as_str()).map(|s| s.to_string());
+            let subject_type = it.get("type").and_then(|x| x.as_i64()).map(|n| n as i32);
+            let date = it.get("date").or_else(|| it.get("air_date")).and_then(|x| x.as_str()).map(|s| s.to_string());
+            if id != 0 && !name.is_empty() {
+                items.push(BangumiSubject { id, name, name_cn, subject_type, date });
+            }
+        }
+    }
+
+    Ok(items)
+}
+
+#[tauri::command]
+async fn get_bangumi_subject_detail(id: i64) -> Result<BangumiSubjectDetail, String> {
+    let url = format!("https://api.bgm.tv/subject/{}", id);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    let resp = client.get(url).send().await.map_err(|e| format!("请求Bangumi失败: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Bangumi返回错误状态码: {}", resp.status()));
+    }
+
+    let v: serde_json::Value = resp.json().await.map_err(|e| format!("解析Bangumi响应失败: {}", e))?;
+
+    let id_v = v.get("id").and_then(|x| x.as_i64()).unwrap_or(id);
+    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let name_cn = v.get("name_cn").and_then(|x| x.as_str()).map(|s| s.to_string());
+
+    let cover_url = v.get("images")
+        .and_then(|imgs| imgs.get("large").or_else(|| imgs.get("common")))
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| v.get("cover").and_then(|x| x.as_str()).map(|s| s.to_string()));
+
+    let episodes = v.get("eps").and_then(|x| x.as_i64()).map(|n| n as i32)
+        .or_else(|| v.get("total_episodes").and_then(|x| x.as_i64()).map(|n| n as i32))
+        .or_else(|| v.get("episodes").and_then(|x| x.as_array()).map(|arr| arr.len() as i32));
+
+    let date_str = v.get("date").or_else(|| v.get("air_date")).and_then(|x| x.as_str());
+    let year = date_str.and_then(|s| s.get(0..4)).and_then(|y| y.parse::<i32>().ok());
+
+    Ok(BangumiSubjectDetail {
+        id: id_v,
+        name,
+        name_cn,
+        cover_url,
+        episodes,
+        year,
+    })
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -407,7 +561,11 @@ pub fn run() {
         rename_subtitle_files,
         pick_files_and_get_info,
         pick_directory_and_get_info,
-        analyze_filename
+        analyze_filename,
+        search_bangumi_subjects,
+        get_bangumi_subject_detail,
+        load_settings,
+        save_settings
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

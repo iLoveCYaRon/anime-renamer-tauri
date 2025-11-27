@@ -40,3 +40,58 @@ export async function analyzeFilename(request: LLMRequest): Promise<LLMResponse>
   }
   return invoke('analyze_filename', { request });
 }
+
+export interface Settings {
+  episode_regex: string;
+  model_url: string;
+  model_name: string;
+}
+
+export async function loadSettings(): Promise<Settings> {
+  if (!isTauri) {
+    return {
+      episode_regex: '\\[(\\d{2})\\]',
+      model_url: 'http://localhost:11434/v1/chat/completions',
+      model_name: 'qwen2.5:7b',
+    };
+  }
+  return invoke('load_settings');
+}
+
+export async function saveSettings(settings: Settings): Promise<boolean> {
+  if (!isTauri) {
+    return true;
+  }
+  return invoke('save_settings', { settings });
+}
+
+export interface BangumiSubject {
+  id: number;
+  name: string;
+  name_cn?: string;
+  subject_type?: number;
+  date?: string;
+}
+
+export async function searchBangumiSubjects(query: string, limit = 10): Promise<BangumiSubject[]> {
+  if (!isTauri) {
+    return [];
+  }
+  return invoke('search_bangumi_subjects', { query, limit });
+}
+
+export interface BangumiSubjectDetail {
+  id: number;
+  name: string;
+  name_cn?: string;
+  cover_url?: string;
+  episodes?: number;
+  year?: number;
+}
+
+export async function getBangumiSubjectDetail(id: number): Promise<BangumiSubjectDetail> {
+  if (!isTauri) {
+    return { id, name: String(id) } as BangumiSubjectDetail;
+  }
+  return invoke('get_bangumi_subject_detail', { id });
+}

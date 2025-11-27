@@ -1,22 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import "./rename.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, TauriEvent } from "@tauri-apps/api/event";
-import {
-  Button,
-  Card,
-  Col,
-  Divider,
-  Empty,
-  Input,
-  List,
-  Row,
-  Segmented,
-  Space,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from "antd";
+import { Button, Card, Col, Divider, Empty, Input, List, Row, Space, Tag, Tooltip, Typography, message, } from "antd";
 import {
   ClearOutlined,
   FileTextOutlined,
@@ -27,7 +13,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { FileInfo } from "../types/llm";
-import { pickFilesAndGetInfo, pickDirectoryAndGetInfo } from "../api/tauri";
+import { pickFilesAndGetInfo, pickDirectoryAndGetInfo, loadSettings } from "../api/tauri";
 
 interface DragDropPayload {
   paths: string[];
@@ -54,7 +40,6 @@ export default function Rename() {
 
   const defaultEpisodeRegex = "\\[(\\d{2})\\]";
   const [episodeRegexStr, setEpisodeRegexStr] = useState<string>(defaultEpisodeRegex);
-  const [episodeRegexError, setEpisodeRegexError] = useState<boolean>(false);
   const [episodeRegex, setEpisodeRegex] = useState<RegExp>(() => new RegExp(defaultEpisodeRegex));
 
   const [episodeItems, setEpisodeItems] = useState<
@@ -67,15 +52,14 @@ export default function Rename() {
   ];
 
   useEffect(() => {
-    try {
-      const re = new RegExp(episodeRegexStr);
-      setEpisodeRegex(re);
-      setEpisodeRegexError(false);
-    } catch {
-      setEpisodeRegex(new RegExp(defaultEpisodeRegex));
-      setEpisodeRegexError(true);
-    }
-  }, [episodeRegexStr]);
+    const init = async () => {
+      try {
+        const s = await loadSettings();
+        setEpisodeRegexStr(s.episode_regex || defaultEpisodeRegex);
+      } catch {}
+    };
+    init();
+  }, []);
 
   useEffect(() => {
     const vMap = new Map<string, FileInfo>();
@@ -310,6 +294,7 @@ export default function Rename() {
 
   return (
     <div
+      className="rename-page"
       style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -334,31 +319,7 @@ export default function Rename() {
         </Space>
       </div>
 
-      <Space orientation="vertical" style={{ width: "100%" }}>
-        <Text>匹配正则表达式（捕获组1为剧集编号）</Text>
-        <Space.Compact block size="middle">
-          <Input
-            size="middle"
-            status={episodeRegexError ? "error" : undefined}
-            value={episodeRegexStr}
-            onChange={(e) => setEpisodeRegexStr(e.target.value)}
-            placeholder="例如: (?:^|[^0-9])(\\d{2})(?!\\d)"
-          />
-          <Button size="middle" onClick={() => setEpisodeRegexStr(defaultEpisodeRegex)}>重置</Button>
-        </Space.Compact>
-        <Segmented
-          options={[
-            { label: "[xx]", value: "\\[(\\d{2})\\]" },
-            { label: "xx", value: "(?:^|[^0-9])(\\d{2})(?!\\d)" },
-            { label: "SxxEyy", value: "S\\d{1,2}E(\\d{2})" },
-            { label: "Eyy/epyy", value: "[Ee][Pp]?(\\d{2})" },
-            { label: "第yy集", value: "第(\\d{2})[集话]" },
-          ]}
-          value={episodeRegexStr}
-          onChange={(val) => setEpisodeRegexStr(String(val))}
-          block
-        />
-      </Space>
+      
 
       <div className="file-lists-container" style={{ flex: 1, minHeight: 0 }}>
         <Row className="file-row" gutter={[12, 0]} style={{ flex: 1, minHeight: 0 }} align="stretch">
@@ -546,8 +507,8 @@ export default function Rename() {
       </Card>
 
       {dragging && (
-        <div className="drop-overlay">
-          <div className="drop-overlay-content">
+        <div className="rename-drop-overlay">
+          <div className="rename-drop-overlay-content">
             <UploadOutlined style={{ fontSize: 64 }} />
             <Title level={2} style={{ marginTop: 16 }}>
               释放文件以添加
@@ -559,4 +520,3 @@ export default function Rename() {
     </div>
   );
 }
-

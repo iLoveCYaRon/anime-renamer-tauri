@@ -14,11 +14,13 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   RobotOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import "./App.css";
 import Welcome from "./pages/Welcome";
 import LLMRecognition from "./pages/LLMRecognition";
 import Rename from "./pages/Rename";
+import SettingsPage from "./pages/Settings";
 
 const { Content, Sider } = Layout;
 const { Text } = Typography;
@@ -26,7 +28,7 @@ const { Text } = Typography;
  
 
 const App = () => {
-  const [activePage, setActivePage] = useState<"welcome" | "rename" | "llm-recognition">("welcome");
+  const [activePage, setActivePage] = useState<"welcome" | "rename" | "llm-recognition" | "settings">("welcome");
   const [collapsed, setCollapsed] = useState<boolean>(true);
   const [isDark, setIsDark] = useState<boolean>(() =>
     typeof window !== "undefined" && window.matchMedia
@@ -100,6 +102,14 @@ const App = () => {
                 >
                   {collapsed ? null : "LLM识别"}
                 </Button>
+                <Button
+                  type={activePage === "settings" ? "primary" : "text"}
+                  icon={<SettingOutlined />}
+                  block
+                  onClick={() => setActivePage("settings")}
+                >
+                  {collapsed ? null : "设置"}
+                </Button>
               </Space>
             </div>
           </Sider>
@@ -115,6 +125,9 @@ const App = () => {
             )}
             {activePage === "rename" && (
               <Rename />
+            )}
+            {activePage === "settings" && (
+              <SettingsPage />
             )}
           </Content>
 

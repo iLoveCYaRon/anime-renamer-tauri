@@ -1,8 +1,10 @@
-import React, { useState, useCallback } from 'react';
-import { Card, Button, List, Tag, Space, message, Row, Col, Input, Form, Typography, Flex } from 'antd';
-import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import React, { useState, useCallback, useEffect } from 'react';
+import './llm-recognition.css';
+import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input } from 'antd';
+import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { FileInfo, RecognitionResult } from '../types/llm';
-import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename } from '../api/tauri';
+import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail } from '../api/tauri';
+import { useRef } from 'react';
 
 interface FileItemProps {
   file: FileInfo;
@@ -70,9 +72,22 @@ export default function LLMRecognition() {
   const [results, setResults] = useState<Map<string, RecognitionResult>>(new Map());
   const [modelUrl, setModelUrl] = useState('http://localhost:11434/v1/chat/completions');
   const [modelName, setModelName] = useState('qwen2.5:7b');
-  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOptions, setSearchOptions] = useState<{ value: string; label: string }[]>([]);
+  const [selectedDetail, setSelectedDetail] = useState<BangumiSubjectDetail | null>(null);
+  const searchAreaRef = useRef<HTMLDivElement | null>(null);
+  const fileListRef = useRef<HTMLDivElement | null>(null);
 
-  
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const s = await loadSettings();
+        setModelUrl(s.model_url);
+        setModelName(s.model_name);
+      } catch {}
+    };
+    init();
+  }, []);
 
   const handlePickFiles = async () => {
     try {
@@ -167,137 +182,214 @@ export default function LLMRecognition() {
     }
   };
 
-  const videoFiles = files.filter(file => file.is_video);
-  const subtitleFiles = files.filter(file => !file.is_video);
+  const handleSearch = useCallback(async (value: string) => {
+    setSearchQuery(value);
+    const q = value.trim();
+    if (!q) {
+      setSearchOptions([]);
+      return;
+    }
+    try {
+      const subjects = await searchBangumiSubjects(q, 10);
+      const opts = subjects.map(s => ({
+        value: String(s.id),
+        label: `${s.name_cn || s.name} ${s.date ? `(${s.date})` : ''}`.trim(),
+      }));
+      setSearchOptions(opts);
+    } catch (e) {
+      setSearchOptions([]);
+    }
+  }, []);
+
+  const handleSelectSubject = (value: string) => {
+    const item = searchOptions.find(o => o.value === value);
+    if (!item) return;
+    const id = Number(value);
+    getBangumiSubjectDetail(id)
+      .then((detail) => {
+        setSelectedDetail(detail);
+      })
+      .catch(() => {
+        setSelectedDetail(null);
+      });
+  };
+
+  const handleInferAnimeFromFiles = async () => {
+    const videoFiles = files.filter(f => f.is_video);
+    const candidates = (videoFiles.length > 0 ? videoFiles : files)
+      .slice()
+      .sort((a, b) => b.name.length - a.name.length)
+      .slice(0, 5);
+
+    if (candidates.length === 0) {
+      message.warning('请先导入文件后再识别');
+      return;
+    }
+
+    const stats = new Map<string, { title: string; count: number; confidences: number[] }>();
+    for (const file of candidates) {
+      try {
+        const resp = await analyzeFilename({ filename: file.name, model_url: modelUrl, model_name: modelName });
+        if (resp.success && resp.data) {
+          const t = resp.data.title.trim();
+          const key = t.toLowerCase();
+          if (!key) continue;
+          const rec = stats.get(key) || { title: t, count: 0, confidences: [] };
+          rec.count += 1;
+          rec.confidences.push(resp.data.confidence || 0);
+          stats.set(key, rec);
+        }
+      } catch {}
+    }
+
+    if (stats.size === 0) {
+      message.error('无法识别列表文件对应的动画');
+      return;
+    }
+
+    let best: { title: string; count: number; avg: number } | null = null;
+    for (const [, rec] of stats) {
+      const avg = rec.confidences.reduce((a, b) => a + b, 0) / rec.confidences.length;
+      if (!best || rec.count > best.count || (rec.count === best.count && avg > best.avg)) {
+        best = { title: rec.title, count: rec.count, avg };
+      }
+    }
+
+    const query = best!.title;
+    setSearchQuery(query);
+    try {
+      const list = await searchBangumiSubjects(query, 10);
+      const opts = list.map(s => ({ value: String(s.id), label: `${s.name_cn || s.name} ${s.date ? `(${s.date})` : ''}`.trim() }));
+      setSearchOptions(opts);
+      if (list.length > 0) {
+        const detail = await getBangumiSubjectDetail(list[0].id);
+        setSelectedDetail(detail);
+      } else {
+        setSelectedDetail(null);
+        message.warning('未在 Bangumi 找到匹配动画');
+      }
+    } catch (e) {
+      setSelectedDetail(null);
+      message.error('获取动画详情失败');
+    }
+  };
+
+  const handleClearFiles = () => {
+    setFiles([]);
+    setResults(new Map());
+    message.success('已清空文件列表');
+  };
+
+  useEffect(() => {}, []);
 
   return (
-    <div className="page-container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="llm-page page-container" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Flex align="center" justify="space-between" style={{ width: '100%' }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>LLM模型识别</Typography.Title>
+        <Typography.Title level={3} style={{ margin: 0 }}>BDRip重命名</Typography.Title>
         <Space>
-          <Button icon={<FileOutlined />} onClick={handlePickFiles} aria-label="选择文件">
-            选择文件
-          </Button>
           <Button icon={<FolderOpenOutlined />} onClick={handlePickDirectory} aria-label="选择文件夹">
             选择文件夹
           </Button>
         </Space>
       </Flex>
 
-      <Card className="section-card llm-config-card" size="small" title="LLM模型配置">
-        <Form layout="vertical">
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={12}>
-              <Form.Item label="模型地址">
-                <Input
-                  aria-label="模型地址"
-                  value={modelUrl}
-                  onChange={(e) => setModelUrl(e.target.value)}
-                  placeholder="http://localhost:11434/v1/chat/completions"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="模型名称">
-                <Input
-                  aria-label="模型名称"
-                  value={modelName}
-                  onChange={(e) => setModelName(e.target.value)}
-                  placeholder="qwen2.5:7b"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
+      <Card className="section-card" size="small"
+        title={
+          <Space>
+            <SearchOutlined />
+            选择动画作品
+          </Space>
+        }
+        extra={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 360, width: 'min(560px, 48vw)' }}>
+            {files.some(f => f.is_video) || files.length > 0 ? (
+              <Button style={{height: 28}} type="primary" onClick={handleInferAnimeFromFiles} aria-label="自动识别">自动识别</Button>
+            ) : null}
+            <AutoComplete
+              options={searchOptions}
+              style={{ width: '100%' }}
+              onSearch={handleSearch}
+              onSelect={handleSelectSubject}
+              value={searchQuery}
+            >
+              <Input style={{height: 28}} allowClear prefix={<SearchOutlined />} placeholder="搜索动画（调用 Bangumi）" />
+            </AutoComplete>
+          </div>
+        }
+      >
+        <div ref={searchAreaRef}>
+        {selectedDetail ? (
+          <div className="bangumi-detail-card">
+            <div className="bangumi-detail-content">
+              <div className="bangumi-cover">
+                <div className="cover-box">
+                  {selectedDetail.cover_url ? (
+                    <img src={selectedDetail.cover_url} alt={selectedDetail.name_cn || selectedDetail.name} />
+                  ) : null}
+                </div>
+              </div>
+              <div className="bangumi-info">
+                <div className="bangumi-title-cn">{selectedDetail.name_cn || selectedDetail.name}</div>
+                <div className="bangumi-title-en">{selectedDetail.name}</div>
+                <div className="bangumi-meta">
+                  {typeof selectedDetail.episodes === 'number' && (
+                    <span>共{selectedDetail.episodes}集</span>
+                  )}
+                  {typeof selectedDetail.year === 'number' && (
+                    <span>{selectedDetail.year}年</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bangumi-detail-card">
+            <div style={{ padding: 12 }}>
+              <Typography.Text type="secondary">暂未匹配动画作品</Typography.Text>
+            </div>
+          </div>
+        )}
+        </div>
       </Card>
 
-      
-
-      <div className="file-lists-container" style={{ flex: 1, minHeight: 0 }}>
-        <Row className="file-row" gutter={[12, 0]} style={{ flex: 1, minHeight: 0 }} align="stretch">
-          <Col className="file-col file-col--video" xs={24} md={12} style={{ height: '100%' }}>
-            <Card className="section-card" size="small"
-              title={
-                <Space>
-                  <PlayCircleOutlined />
-                  视频文件
-                  {videoFiles.length > 0 && (
-                    <Tag color="blue">{videoFiles.length}</Tag>
-                  )}
-                </Space>
-              }
-              extra={
-                videoFiles.length > 0 ? (
-                  <Button type="primary" onClick={handleAnalyzeAll} aria-label="批量识别所有视频">批量识别所有视频</Button>
-                ) : null
-              }
-              style={{ height: '100%' }}
-            >
-              <div className={`list-body ${videoFiles.length === 0 ? 'empty' : ''}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                {videoFiles.length === 0 ? (
-                  <List locale={{ emptyText: '暂无视频文件' }} />
-                ) : (
-                  <div className="list-scroll" style={{ flex: 1, overflowY: 'auto', width: '100%' }}>
-                    <List<FileInfo>
-                      size="small"
-                      bordered
-                      dataSource={videoFiles}
-                      renderItem={(file) => (
-                        <FileItem
-                          key={file.path}
-                          file={file}
-                          result={results.get(file.path) || null}
-                          onAnalyze={handleAnalyze}
-                        />
-                      )}
-                    />
-                  </div>
+      <Card className="section-card section-card--list" size="small"
+        title={
+          <Space>
+            <PlayCircleOutlined />
+            文件列表
+            {files.length > 0 && (
+              <Tag color="blue">{files.length}</Tag>
+            )}
+          </Space>
+        }
+        extra={
+          files.length > 0 ? (
+            <Button size="small" danger onClick={handleClearFiles} aria-label="清空文件列表">清空</Button>
+          ) : null
+        }
+      >
+        <div ref={fileListRef} className={`list-body ${files.length === 0 ? 'empty' : ''}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          {files.length === 0 ? (
+            <List locale={{ emptyText: '暂无文件' }} />
+          ) : (
+            <div className="list-scroll" style={{ flex: 1, overflowY: 'auto', width: '100%' }}>
+              <List<FileInfo>
+                size="small"
+                bordered
+                dataSource={files}
+                renderItem={(file) => (
+                  <FileItem
+                    key={file.path}
+                    file={file}
+                    result={results.get(file.path) || null}
+                    onAnalyze={handleAnalyze}
+                  />
                 )}
-              </div>
-            </Card>
-          </Col>
-
-          <Col className="file-col file-col--subtitle" xs={24} md={12} style={{ height: '100%' }}>
-            <Card className="section-card" size="small"
-              title={
-                <Space>
-                  <FileTextOutlined />
-                  字幕文件
-                  {files.length > 0 && (
-                    <Tag color="green">{subtitleFiles.length}</Tag>
-                  )}
-                </Space>
-              }
-              style={{ height: '100%' }}
-            >
-              <div className={`list-body ${subtitleFiles.length === 0 ? 'empty' : ''}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                {subtitleFiles.length === 0 ? (
-                  <List locale={{ emptyText: '暂无字幕文件' }} />
-                ) : (
-                  <div className="list-scroll" style={{ flex: 1, overflowY: 'auto', width: '100%' }}>
-                    <List<FileInfo>
-                      size="small"
-                      bordered
-                      dataSource={subtitleFiles}
-                      renderItem={(file) => (
-                        <List.Item>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
-                            <Space>
-                              <Tag>SUB</Tag>
-                              <Typography.Text ellipsis>{file.name}</Typography.Text>
-                            </Space>
-                            <Typography.Text type="secondary" ellipsis>{file.path}</Typography.Text>
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-            </Card>
-          </Col>
-        </Row>
-      </div>
+              />
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

@@ -1,0 +1,13 @@
+{
+  "episode_regex": "\\[(\\d{2})\\]",
+  "model_url": "http://localhost:11434/v1/chat/completions",
+  "model_name": "qwen2.5:3b",
+  "selected_bangumi": {
+    "id": 101375,
+    "name": "這いよれ! ニャル子さんW Wにさよなら/この温泉に恋の渾沌を",
+    "name_cn": "潜行吧！奈亚子W  OVA",
+    "cover_url": "http://lain.bgm.tv/pic/cover/l/2f/47/101375_oW3i3.jpg",
+    "episodes": 1,
+    "year": 2013
+  }
+}

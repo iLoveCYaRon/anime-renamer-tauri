@@ -1,0 +1,147 @@
+.llm-page {}
+
+/* 共享基础样式作用域化到 LLM 识别页面 */
+.llm-page .file-lists-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  width: 100%;
+  position: relative;
+}
+.llm-page .file-row {
+  flex: 1;
+  min-height: 0;
+}
+.llm-page .file-col {
+  height: 100%;
+}
+.llm-page .section-card--list {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.llm-page .section-card .ant-list-item {
+  padding: 6px 10px;
+}
+.llm-page .file-col .ant-list-item {
+  height: 60px;
+}
+.llm-page .file-col--video .ant-list-item .ant-space {
+  align-items: center;
+}
+.llm-page .section-card .ant-list-item .ant-typography {
+  line-height: 1.3;
+}
+.llm-page .ant-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.llm-page .ant-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.llm-page .section-card--list .ant-card-body {
+  height: 100%;
+}
+.llm-page .list-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.llm-page .list-body.empty {
+  align-items: center;
+  justify-content: center;
+}
+.llm-page .list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable both-edges;
+}
+
+
+/* 页面切换过渡效果 */
+.llm-page.page-container {
+  animation: fadeSlideIn 220ms ease;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.llm-page .bangumi-detail-card {
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  background: var(--ant-color-bg-container);
+  overflow: hidden;
+  animation: bangumiFadeIn 300ms ease;
+}
+.llm-page .bangumi-detail-content {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+.llm-page .bangumi-cover {
+  width: 240px;
+  flex: 0 0 240px;
+}
+.llm-page .bangumi-cover .cover-box {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--ant-color-fill-tertiary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.llm-page .bangumi-cover .cover-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.llm-page .bangumi-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+.llm-page .bangumi-title-cn {
+  font-size: 18px;
+  font-weight: 600;
+}
+.llm-page .bangumi-title-en {
+  font-size: 14px;
+  color: var(--ant-color-text-tertiary);
+}
+.llm-page .bangumi-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--ant-color-text-secondary);
+}
+@media (max-width: 768px) {
+  .llm-page .bangumi-detail-content {
+    flex-direction: column;
+  }
+  .llm-page .bangumi-cover { width: 100%; flex: 1 1 auto; }
+}
+@keyframes bangumiFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
