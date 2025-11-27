@@ -6,11 +6,11 @@ export interface FileInfo {
 
 export interface AnimeInfo {
   title: string;
-  season: number;
-  episode: number;
-  codec: string | undefined;
-  group: string | undefined;
-  language_tags: string | undefined;
+  season: string;
+  episode: string;
+  codec?: string;
+  group?: string;
+  language_tags?: string;
 }
 
 export interface RecognitionResult {

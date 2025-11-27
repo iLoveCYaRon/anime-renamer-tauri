@@ -29,10 +29,13 @@ pub struct LLMRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct AnimeInfo {
     pub title: String,
-    pub season: u32,
-    pub episode: u32,
+    pub season: String,
+    pub episode: String,
+    #[serde(default)]
     pub codec: Option<String>,
+    #[serde(default)]
     pub group: Option<String>,
+    #[serde(default)]
     pub language_tags: Option<String>,
 }
 

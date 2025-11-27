@@ -297,41 +297,26 @@ async fn analyze_filename(request: LLMRequest) -> Result<LLMResponse, String> {
     let is_sub = is_subtitle_file(&request.filename);
     let prompt = if is_sub {
         r#"
-你是一个动画文件名信息提取器。
-输入可能是字幕文件名（如 .ass/.srt/.ssa/.vtt）。
-仅需精准提取“动画标题”和“集数”。
-
-请严格返回 JSON，完整字段如下：
-{
-    "title": "动画标题",
-    "season": "季数",
-    "episode": "集数",
-    "language_tags": "字幕语言标签, 日文使用"JPN",简体中文使用"CHS",繁体中文使用"CHT",其它则留空",
-}
-季数和集数至少使用两位数字表示
-若无法从字幕文件名确定除标题与集数外的字段：
-- season 缺失则为 01
-
-只输出 JSON，不要附加说明。
+你是动画信息提取器，需精准提取核心信息并严格按以下要求返回 JSON，无任何额外说明：
+提取规则
+标题：优先提取简体中文核心名称，包含明确的篇章 / 篇名（若有），剔除季数、集数、语言标识等附加信息，确保对应动画本体及篇章。
+季数：用两位数字表示（如 01、02），未明确标注则默认填充 01；篇章含 “季” 相关表述的（如 “最终季”），按实际数字转换（无具体数字仍填 01）。
+集数：必须用两位数字表示（如 01、12），无明确集数信息则填 00。
+语言标签：严格对应标准标识，日文填 “JPN”、简体中文填 “CHS”、繁体中文填 “CHT”，无明确语言信息则留空字符串。
+强制返回结构（字段不可增删、顺序固定）
+{"title": "包含篇章的简体中文动画标题","season": "两位数字季数","episode": "两位数字集数","language_tags": "语言标签或空字符串"}
 "#.to_string()
     } else {
         r#"
-你是一个动画视频文件信息提取专家。
-从文件名中提取动画信息并以 JSON 返回。
-
-必须严格返回以下结构：
-请严格返回 JSON，完整字段如下：
-{
-    "title": "动画标题",
-    "season": "季数",
-    "episode": "集数",
-    "codec": "编码格式例如AVC、HEVC等",
-    "group": "压制组名称 例如VCB-Studio",
-}
-季数和集数至少使用两位数字表示
-若无法从字幕文件名确定除标题与集数外的字段：
-- season 缺失则为 01
-只输出 JSON，不要额外说明。
+你是动画视频文件信息提取专家，需从文件名中精准提取信息并严格按以下要求返回 JSON，无任何额外说明：
+提取规则
+标题：优先提取简体中文核心名称，包含明确的篇章 / 篇名（若有），剔除季数、集数、编码、压制组等附加信息，确保准确对应动画本体及篇章。
+季数：用两位数字表示（如 01、02），未明确标注则默认填充 01；篇章包含 “季” 相关表述的（如 “最终季”），按实际数字转换（最终季对应 04 则填 04，无具体数字仍填 01）。
+集数：必须用两位数字表示（如 01、12），无明确集数信息则填 00。
+编码格式：仅识别 AVC、HEVC、XviD、DivX 等标准编码标识，无则留空字符串。
+压制组：提取文件名中明确标注的压制组名称（如 VCB-Studio、LoliHouse），无则留空字符串。
+强制返回结构（字段不可增删、顺序固定）
+{"title": "包含篇章的简体中文动画标题","season": "两位数字季数","episode": "两位数字集数","codec": "编码格式或空字符串","group": "压制组名称或空字符串"}
 "#.to_string()
     };
     let user_content = if is_sub { format!("这是字幕文件名，请分析并仅确保标题与集数准确：{}", request.filename) } else { format!("请分析这个动画文件名：{}", request.filename) };
@@ -379,6 +364,7 @@ async fn analyze_filename(request: LLMRequest) -> Result<LLMResponse, String> {
         .as_str()
         .ok_or("无法从LLM响应中提取内容")?;
 
+    println!("LLM响应内容: {}", content);
     // 尝试解析JSON响应
     match serde_json::from_str::<AnimeInfo>(content) {
         Ok(anime_info) => Ok(LLMResponse {
