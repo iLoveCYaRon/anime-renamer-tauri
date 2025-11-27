@@ -14,3 +14,7 @@ dist/
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+#setting
+src-tauri/settings.json
+settings.json
