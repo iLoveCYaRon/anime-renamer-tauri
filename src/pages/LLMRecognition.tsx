@@ -22,15 +22,12 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
   const buildPreview = (f: FileInfo, res: RecognitionResult | null) => {
     if (!res || !res.info) return '';
     const info = res.info;
-    const group = info.group ? `[${info.group}] ` : '';
     const title = info.title.trim();
-    const epPart = info.special_type
-      ? `${info.special_type}${pad2(info.episode)}`
-      : `S${pad2(info.season)}E${pad2(info.episode)}`;
-    const reso = info.resolution ? ` [${info.resolution}]` : '';
-    const codec = info.codec ? ` [${info.codec}]` : '';
-    const langs = (info.language_tags || []).map(t => ` [${t}]`).join('');
-    const base = `${group}${title} - ${epPart}${reso}${codec}${langs}`;
+    const epPart = `.S${pad2(info.season)}E${pad2(info.episode)}`;
+    const group = info.group ? `.${info.group} ` : '';
+    const codec = info.codec ? ` .${info.codec}` : '';
+    const langs = info.language_tags ? `.${info.language_tags}` : '';
+    const base = `${title}${epPart}${group}${codec}${langs}`;
     return `${base}${ext(f.name)}`;
   };
   const renderMetaLine = (res: RecognitionResult | null) => {
@@ -40,16 +37,10 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
         {info && (
           <Space size="small" wrap>
             <Tag color="blue">{info.title}</Tag>
-            <Tag color="green">{info.special_type ? info.special_type : `S${pad2(info.season)}E${pad2(info.episode)}`}</Tag>
-            {info.resolution && <Tag color="purple">{info.resolution}</Tag>}
+            <Tag color="green">{`S${pad2(info.season)}E${pad2(info.episode)}`}</Tag>
             {info.codec && <Tag color="cyan">{info.codec}</Tag>}
             {info.group && <Tag color="magenta">{info.group}</Tag>}
-            {(info.language_tags || []).map((tag, index) => (
-              <Tag key={index} color="gold">{tag}</Tag>
-            ))}
-            <Tag color={info.confidence > 0.8 ? 'success' : 'warning'}>
-              置信度 {(info.confidence * 100).toFixed(1)}%
-            </Tag>
+            {info.language_tags && <Tag color="gold">{info.language_tags}</Tag>}
           </Space>
         )}
         {res?.error && (
@@ -241,7 +232,6 @@ export default function LLMRecognition() {
           if (!key) continue;
           const rec = stats.get(key) || { title: t, count: 0, confidences: [] };
           rec.count += 1;
-          rec.confidences.push(resp.data.confidence || 0);
           stats.set(key, rec);
         }
       } catch {}

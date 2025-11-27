@@ -8,12 +8,9 @@ export interface AnimeInfo {
   title: string;
   season: number;
   episode: number;
-  special_type: string | null; // "SP", "OVA", "Movie"
-  resolution: string;
-  codec: string;
-  group: string;
-  language_tags: string[];
-  confidence: number; // 0.0 to 1.0
+  codec: string | undefined;
+  group: string | undefined;
+  language_tags: string | undefined;
 }
 
 export interface RecognitionResult {

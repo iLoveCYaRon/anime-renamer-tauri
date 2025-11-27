@@ -31,12 +31,9 @@ pub struct AnimeInfo {
     pub title: String,
     pub season: u32,
     pub episode: u32,
-    pub special_type: Option<String>,
-    pub resolution: String,
-    pub codec: String,
-    pub group: String,
-    pub language_tags: Vec<String>,
-    pub confidence: f32,
+    pub codec: Option<String>,
+    pub group: Option<String>,
+    pub language_tags: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -78,4 +75,3 @@ pub struct DirectoryPickResult {
     pub files: Vec<FileInfo>,
     pub canceled: bool,
 }
-
