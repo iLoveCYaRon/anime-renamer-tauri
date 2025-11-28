@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { FileInfo, LLMRequest, LLMResponse } from '../types/llm';
+import { FileInfo, LLMRequest, LLMResponse, BatchLLMRequest, BatchLLMResponse } from '../types/llm';
 
 // 确保Tauri API可用
 const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
@@ -39,6 +39,14 @@ export async function analyzeFilename(request: LLMRequest): Promise<LLMResponse>
     throw new Error('Tauri API 不可用');
   }
   return invoke('analyze_filename', { request });
+}
+
+// 批量分析文件名
+export async function batchAnalyzeFilenames(request: BatchLLMRequest): Promise<BatchLLMResponse> {
+  if (!isTauri) {
+    throw new Error('Tauri API 不可用');
+  }
+  return invoke('batch_analyze_filenames', { request });
 }
 
 export interface Settings {

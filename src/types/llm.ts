@@ -31,3 +31,18 @@ export interface LLMResponse {
   data?: AnimeInfo;
   error?: string;
 }
+
+export interface BatchLLMRequest {
+  filenames: string[];
+  model_url: string;
+  model_name: string;
+}
+
+export interface BatchLLMResponse {
+  success: boolean;
+  data?: {
+    anime_title: string;
+    confidence: number;
+  };
+  error?: string;
+}

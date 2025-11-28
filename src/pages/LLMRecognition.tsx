@@ -3,7 +3,7 @@ import './llm-recognition.css';
 import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input, Row, Col } from 'antd';
 import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { FileInfo, RecognitionResult } from '../types/llm';
-import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail } from '../api/tauri';
+import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, batchAnalyzeFilenames, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail } from '../api/tauri';
 import { useRef } from 'react';
 
 interface FileItemProps {
@@ -215,57 +215,150 @@ export default function LLMRecognition() {
     const candidates = (videoFiles.length > 0 ? videoFiles : files)
       .slice()
       .sort((a, b) => b.name.length - a.name.length)
-      .slice(0, 5);
+      .slice(0, 10);
 
     if (candidates.length === 0) {
       message.warning('请先导入文件后再识别');
       return;
     }
 
-    const stats = new Map<string, { title: string; count: number; confidences: number[] }>();
-    for (const file of candidates) {
-      try {
-        const resp = await analyzeFilename({ filename: file.name, model_url: modelUrl, model_name: modelName });
-        if (resp.success && resp.data) {
-          const t = resp.data.title.trim();
-          const key = t.toLowerCase();
-          if (!key) continue;
-          const rec = stats.get(key) || { title: t, count: 0, confidences: [] };
-          rec.count += 1;
-          stats.set(key, rec);
-        }
-      } catch {}
-    }
-
-    if (stats.size === 0) {
-      message.error('无法识别列表文件对应的动画');
-      return;
-    }
-
-    let best: { title: string; count: number; avg: number } | null = null;
-    for (const [, rec] of stats) {
-      const avg = rec.confidences.reduce((a, b) => a + b, 0) / rec.confidences.length;
-      if (!best || rec.count > best.count || (rec.count === best.count && avg > best.avg)) {
-        best = { title: rec.title, count: rec.count, avg };
-      }
-    }
-
-    const query = best!.title;
-    setSearchQuery(query);
     try {
-      const list = await searchBangumiSubjects(query, 10);
-      const opts = list.map(s => ({ value: String(s.id), label: `${s.name_cn || s.name} ${s.date ? `(${s.date})` : ''}`.trim() }));
-      setSearchOptions(opts);
-      if (list.length > 0) {
-        const detail = await getBangumiSubjectDetail(list[0].id);
-        setSelectedDetail(detail);
+      // 使用新的批量分析API
+      const filenames = candidates.map(f => f.name);
+      const response = await batchAnalyzeFilenames({
+        filenames,
+        model_url: modelUrl,
+        model_name: modelName,
+      });
+
+      if (response.success && response.data) {
+        const { anime_title, confidence } = response.data;
+        
+        if (!anime_title || anime_title.trim() === '') {
+          message.error('无法识别列表文件对应的动画');
+          return;
+        }
+
+        // 设置搜索查询
+        const query = anime_title.trim();
+        setSearchQuery(query);
+        
+        // 搜索 Bangumi
+        try {
+          const list = await searchBangumiSubjects(query, 10);
+          const opts = list.map(s => ({ 
+            value: String(s.id), 
+            label: `${s.name_cn || s.name} ${s.date ? `(${s.date})` : ''}`.trim() 
+          }));
+          setSearchOptions(opts);
+          
+          if (list.length > 0) {
+            const detail = await getBangumiSubjectDetail(list[0].id);
+            setSelectedDetail(detail);
+            message.success(`成功识别动画: ${query} (置信度: ${Math.round(confidence * 100)}%)`);
+            
+            // 获取Bangumi中文标题
+            const bangumiTitle = detail.name_cn || detail.name;
+            
+            // 对文件逐个调用分析方法获取原信息并显示重命名预览
+            message.info('开始分析文件信息...');
+            let analyzedCount = 0;
+            let successCount = 0;
+            
+            for (const file of files) {
+              if (!file.is_video) continue;
+              
+              try {
+                // 设置加载状态
+                setResults(prev => {
+                  const newResults = new Map(prev);
+                  const existing = newResults.get(file.path);
+                  newResults.set(file.path, {
+                    file,
+                    info: existing?.info || null,
+                    loading: true,
+                    error: null,
+                  });
+                  return newResults;
+                });
+                
+                // 调用分析API获取文件信息
+                const fileResponse = await analyzeFilename({
+                  filename: file.name,
+                  model_url: modelUrl,
+                  model_name: modelName,
+                });
+                
+                analyzedCount++;
+                
+                if (fileResponse.success && fileResponse.data) {
+                  // 使用Bangumi标题替换原标题
+                  const updatedInfo = {
+                    ...fileResponse.data,
+                    title: bangumiTitle
+                  };
+                  
+                  setResults(prev => {
+                    const newResults = new Map(prev);
+                    newResults.set(file.path, {
+                      file,
+                      info: updatedInfo,
+                      loading: false,
+                      error: null,
+                    });
+                    return newResults;
+                  });
+                  
+                  successCount++;
+                } else {
+                  setResults(prev => {
+                    const newResults = new Map(prev);
+                    newResults.set(file.path, {
+                      file,
+                      info: null,
+                      loading: false,
+                      error: fileResponse.error || '识别失败',
+                    });
+                    return newResults;
+                  });
+                }
+                
+                // 添加小延迟避免并发请求过多
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+              } catch (error) {
+                setResults(prev => {
+                  const newResults = new Map(prev);
+                  newResults.set(file.path, {
+                    file,
+                    info: null,
+                    loading: false,
+                    error: `分析错误: ${error}`,
+                  });
+                  return newResults;
+                });
+              }
+            }
+            
+            if (successCount > 0) {
+              message.success(`文件分析完成！成功识别 ${successCount}/${analyzedCount} 个文件，使用标题: ${bangumiTitle}`);
+            } else {
+              message.warning(`文件分析完成，但未成功识别任何文件信息`);
+            }
+            
+          } else {
+            setSelectedDetail(null);
+            message.warning('未在 Bangumi 找到匹配动画');
+          }
+        } catch (e) {
+          setSelectedDetail(null);
+          message.error('获取动画详情失败');
+        }
       } else {
-        setSelectedDetail(null);
-        message.warning('未在 Bangumi 找到匹配动画');
+        message.error(response.error || '无法识别列表文件对应的动画');
       }
-    } catch (e) {
-      setSelectedDetail(null);
-      message.error('获取动画详情失败');
+    } catch (error) {
+      message.error(`批量识别失败: ${error}`);
     }
   };
 

@@ -46,6 +46,26 @@ pub struct LLMResponse {
     pub error: Option<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BatchLLMRequest {
+    pub filenames: Vec<String>,
+    pub model_url: String,
+    pub model_name: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BatchLLMResponse {
+    pub success: bool,
+    pub data: Option<BatchLLMResult>,
+    pub error: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BatchLLMResult {
+    pub anime_title: String,
+    pub confidence: f64,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct BangumiSubject {
     pub id: i64,

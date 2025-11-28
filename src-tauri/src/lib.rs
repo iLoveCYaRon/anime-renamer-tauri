@@ -7,7 +7,7 @@ use std::time::Duration;
 mod types;
 use crate::types::{
     AnimeInfo, BangumiSubject, BangumiSubjectDetail, DirectoryPickResult, FileInfo, LLMRequest,
-    LLMResponse, RenameRequest, RenameResponse, Settings,
+    LLMResponse, BatchLLMRequest, BatchLLMResponse, BatchLLMResult, RenameRequest, RenameResponse, Settings,
 };
 
 fn settings_path() -> Result<PathBuf, String> {
@@ -397,6 +397,118 @@ async fn analyze_filename(request: LLMRequest) -> Result<LLMResponse, String> {
     }
 }
 
+// 批量分析文件名，调用LLM模型
+#[tauri::command]
+async fn batch_analyze_filenames(request: BatchLLMRequest) -> Result<BatchLLMResponse, String> {
+    if request.filenames.is_empty() {
+        return Ok(BatchLLMResponse {
+            success: false,
+            data: None,
+            error: Some("文件列表为空".to_string()),
+        });
+    }
+
+    let prompt = r#"
+你是动画信息提取专家，需要分析一批动画文件名并找出它们共同对应的动画标题。
+
+任务要求：
+1. 分析提供的所有文件名
+2. 找出这些文件最可能对应的动画标题
+3. 返回最可能的动画标题和置信度
+
+分析规则：
+- 提取文件中的共同关键词作为动画标题
+- 忽略集数、季数、分辨率、编码格式、压制组等信息
+- 优先识别简体中文标题，如果没有则识别日文或英文标题
+- 计算置信度（0-1之间的数值），基于文件名相似度和关键词匹配程度
+
+返回格式：
+{"anime_title": "动画标题", "confidence": 0.85}
+
+只返回JSON，不要有任何额外解释。
+"#;
+
+    let filenames_text = request.filenames.join("\n");
+    let user_content = format!("请分析以下文件名，找出它们共同对应的动画标题：\n{}", filenames_text);
+    
+    let request_body = serde_json::json!({
+        "model": request.model_name,
+        "messages": [
+            { "role": "system", "content": prompt },
+            { "role": "user", "content": user_content }
+        ],
+        "temperature": 0.3,
+        "max_tokens": 200
+    });
+
+    // 创建HTTP客户端
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    // 发送请求到LLM模型
+    let response = client
+        .post(&request.model_url)
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("请求LLM模型失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Ok(BatchLLMResponse {
+            success: false,
+            data: None,
+            error: Some(format!("LLM模型返回错误状态码: {}", response.status())),
+        });
+    }
+
+    // 解析响应
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析LLM响应失败: {}", e))?;
+
+    // 提取content字段
+    let content = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or("无法从LLM响应中提取内容")?;
+
+    println!("批量LLM响应内容: {}", content);
+    
+    // 尝试解析JSON响应
+    match serde_json::from_str::<BatchLLMResult>(content) {
+        Ok(result) => Ok(BatchLLMResponse {
+            success: true,
+            data: Some(result),
+            error: None,
+        }),
+        Err(_) => {
+            // 如果直接解析失败，尝试清理响应并重新解析
+            let cleaned_content = content
+                .trim()
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+
+            match serde_json::from_str::<BatchLLMResult>(cleaned_content) {
+                Ok(result) => Ok(BatchLLMResponse {
+                    success: true,
+                    data: Some(result),
+                    error: None,
+                }),
+                Err(_) => Ok(BatchLLMResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!("解析LLM响应格式失败: {}", content)),
+                }),
+            }
+        }
+    }
+}
+
 #[tauri::command]
 async fn search_bangumi_subjects(
     query: String,
@@ -592,6 +704,7 @@ pub fn run() {
             pick_files_and_get_info,
             pick_directory_and_get_info,
             analyze_filename,
+            batch_analyze_filenames,
             search_bangumi_subjects,
             get_bangumi_subject_detail,
             load_settings,
