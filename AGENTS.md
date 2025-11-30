@@ -1,174 +1,86 @@
+
 # AGENTS.md - 动漫重命名工具项目指南
 
 ## 项目概述
 
-这是一个基于Tauri + React的跨平台桌面应用，专门用于批量重命名字幕文件，使其与对应的视频文件保持一致的命名规范。项目名称"Skyey Liner Renamer"，主要服务于动漫爱好者和视频收藏者。
+基于 Tauri 2 + React 19 的跨平台桌面应用，主打两个流程：1) 按剧集号批量重命名字幕文件以匹配对应视频；2) 通过本地/自托管 LLM 分析 BDRip 文件名并联动 Bangumi 搜索，生成规范化预览。默认深色主题，使用 Ant Design 组件库。
 
-## 技术栈分析
+## 技术栈
 
-### 前端技术栈
-- **框架**: React 19.1.0 + TypeScript
-- **构建工具**: Rsbuild (替代Webpack的现代构建工具)
-- **样式**: 原生CSS，采用深色主题设计
-- **状态管理**: React Hooks (useState, useEffect)
-- **Tauri集成**: @tauri-apps/api 2.9.0
+- **前端**: React 19 + TypeScript 5.8、Ant Design 6、Rsbuild 构建、原生 CSS；Hook 管理状态，侧边栏内嵌多页面（欢迎页 / 字幕重命名 / LLM 识别 / 设置）。
+- **后端(Tauri)**: Rust 1.77.2+，命令暴露给前端；依赖 reqwest + serde 做 HTTP/序列化，regex 解析，tauri-plugin-fs/dialog/log 提供文件选择、日志与拖放。
+- **工具链**: pnpm、@tauri-apps/cli 2.5.0；设置持久化到仓库根的 `settings.json`。
 
-### 后端技术栈
-- **运行时**: Tauri 2.5.0 (Rust-based)
-- **语言**: Rust 1.77.2+
-- **日志**: tauri-plugin-log 2.0.0-rc
-- **序列化**: serde + serde_json
+## 仓库结构
 
-### 开发环境
-- **包管理**: pnpm
-- **类型检查**: TypeScript 5.8.3
-- **代码规范**: 严格模式，无未使用变量检查
-
-## 核心功能
-
-### 1. 文件拖放处理
-- **Tauri原生拖放**: 支持从文件系统直接拖放文件到应用窗口
-- **文件类型识别**: 自动区分视频文件和字幕文件
-- **批量处理**: 支持同时拖放多个文件
-
-### 2. 文件类型支持
-- **视频格式**: mp4, mkv, avi, mov, wmv, flv, webm, m4v, rmvb, 3gp, mpeg, mpg, ts, mts, m2ts
-- **字幕格式**: srt, ass, ssa, sub, idx, vtt, txt
-
-### 3. 重命名规则
-- **基础命名**: 字幕文件名 = 视频文件名 + 语言后缀 + 原扩展名
-- **预设后缀**: CHS(简体), CHT(繁体), ENG(英文), CHS&CHT(双语), ZH(中文), JP(日文)
-- **自定义后缀**: 支持用户输入任意语言标识
-
-### 4. 用户界面
-- **深色主题**: 现代化的深色界面设计
-- **拖放提示**: 全屏拖放遮罩层，提供视觉反馈
-- **状态反馈**: 实时显示操作结果和错误信息
-- **文件列表**: 分别显示视频和字幕文件清单
-
-## 代码架构
-
-### 前端架构 (src/)
-```
-src/
-├── App.tsx          # 主组件，包含核心业务逻辑
-├── TicTacToe.tsx    # 示例组件（未使用）
-├── App.css          # 样式文件
-├── index.tsx        # 应用入口
-└── env.d.ts         # 类型声明
+```Plaintext
+根/
+├── src/                # 前端 React
+│   ├── App.tsx         # 全局布局，侧边导航与页面切换
+│   ├── App.css
+│   ├── api/tauri.ts    # 与 Tauri 命令的桥接封装
+│   ├── components/
+│   │   └── AntdThemeProvider.tsx
+│   ├── pages/
+│   │   ├── Welcome.tsx           # 入口介绍
+│   │   ├── Rename.tsx + rename.css# 字幕重命名页面
+│   │   ├── LLMRecognition.tsx + llm-recognition.css # BDRip/LLM 识别
+│   │   ├── Settings.tsx + settings.css # 设置
+│   └── types/llm.ts    # 前端共享类型
+├── src-tauri/
+│   ├── src/
+│   │   ├── lib.rs              # 命令注册与插件挂载
+│   │   ├── rename.rs           # 字幕重命名与拖放解析
+│   │   ├── llm_recognition.rs  # LLM 调用与 Bangumi 查询
+│   │   ├── settings.rs         # 设置读写 (settings.json)
+│   │   ├── utils.rs            # 扩展名判断、路径工具
+│   │   └── types.rs            # 后端数据结构
+│   └── Cargo.toml, tauri.conf.json
+├── settings.json       # 运行后生成/覆盖的配置文件
+└── rsbuild.config.ts, tsconfig.json, package.json, README.md
 ```
 
-### 后端架构 (src-tauri/src/)
-```
-src-tauri/src/
-├── main.rs    # 应用入口点
-└── lib.rs     # 核心业务逻辑和Tauri命令
-```
+## 页面与核心逻辑
 
-### 关键数据结构
-```typescript
-// 文件信息接口
-interface FileInfo {
-    name: string;      // 文件名
-    path: string;      // 完整路径
-    is_video: boolean; // 是否为视频文件
-}
+- **字幕重命名 (`src/pages/Rename.tsx`)**
+  - 支持 Tauri 原生拖放 (`get_dropped_files`) 与文件/文件夹选择；文件夹导入仅收集视频并按剧集号过滤对应字幕。
+  - 剧集匹配用可配置正则，默认 `\[(\d{2})\]`，可在设置页修改并写入 settings.json；双列按剧集预览。
+  - 后缀可选 chs/cht 或自定义；调用 `rename_subtitle_files` 按索引配对重命名，缺字幕提示跳过，目标存在即中止。
+  - 交互：全屏拖放遮罩、左右列表滚动联动、清空按钮、Ctrl+R 快捷提示。
+- **BDRip/LLM 识别 (`src/pages/LLMRecognition.tsx`)**
+  - 目录选择导入视频（或多选文件）；可单个 `analyze_filename`，或自动识别触发 `batch_analyze_filenames` 推断番名后逐个解析。
+  - 模型地址/名称来自设置页 (`model_url`/`model_name`)，期望兼容 OpenAI Chat Completions 协议。
+  - Bangumi：搜索命令取候选，详情命令展示封面/标题/年份/集数；预览 = 标题 + `S01E##` + 压制组/编码。
+- **设置 (`src/pages/Settings.tsx`)**
+  - 配置：episode_regex、model_url、model_name；保存=save_settings，加载=load_settings。
+  - 存储于仓库根 settings.json，`pnpm tauri` 默认忽略热更。
+- **欢迎页 (`src/pages/Welcome.tsx`)**
+  - 入口引导，按钮跳转到重命名或 LLM 识别。
 
-// 重命名请求接口
-interface RenameRequest {
-    video_files: FileInfo[];    // 视频文件列表
-    subtitle_files: FileInfo[]; // 字幕文件列表
-    suffix: string;              // 语言后缀
-}
+## Tauri 命令 & 数据结构
 
-// 重命名响应接口
-interface RenameResponse {
-    success: boolean;        // 操作是否成功
-    message: string;         // 结果消息
-    renamed_files: string[]; // 重命名后的文件名列表
-}
-```
+- **命令**：`get_dropped_files`, `rename_subtitle_files`, `pick_files_and_get_info`, `pick_directory_and_get_info`, `analyze_filename`, `batch_analyze_filenames`, `search_bangumi_subjects`, `get_bangumi_subject_detail`, `load_settings`, `save_settings`。
+- **关键类型（后端定义，前端同名）**
+  - FileInfo { name, path, is_video }
+  - RenameRequest { video_files, subtitle_files, suffix } → RenameResponse { success, message, renamed_files }
+  - LLMRequest { filename, model_url, model_name } / LLMResponse { success, data?: AnimeInfo, error?: string }
+  - BatchLLMRequest { filenames, model_url, model_name } / BatchLLMResponse { success, data?: AnimeInfo }
+  - BangumiSubject { id, name, name_cn?, date? } / BangumiSubjectDetail { id, name, name_cn?, cover_url?, episodes?, year? }
+  - Settings { episode_regex, model_url, model_name }，DirectoryPickResult { files, canceled }
 
-## 开发指南
+## 运行与构建
 
-### 环境搭建
 ```bash
-# 安装依赖
 pnpm install
-
-# 启动开发服务器
-pnpm dev
-
-# 启动Tauri开发模式
-pnpm tauri
+pnpm dev          # 前端开发（Rsbuild）
+pnpm tauri        # Tauri 开发模式（已忽略 settings.json 变动）
+pnpm build        # 前端构建
+pnpm tauri build  # 打包桌面应用
 ```
-
-### 构建发布
-```bash
-# 构建前端
-pnpm build
-
-# 构建Tauri应用
-pnpm tauri build
-```
-
-### 代码规范
-- TypeScript严格模式开启
-- 禁止使用未使用的变量和参数
-- 使用函数式组件和Hooks
-- 错误处理和用户反馈必须完善
-
-## 功能扩展建议
-
-### 1. 国际化支持
-- 添加多语言界面支持
-- 支持不同地区的命名习惯
-
-### 2. 高级重命名规则
-- 支持正则表达式匹配
-- 自定义命名模板
-- 批量预览功能
-
-### 3. 文件管理增强
-- 文件夹递归处理
-- 文件备份机制
-- 操作历史记录
-
-### 4. 用户体验优化
-- 快捷键支持 (已实现Ctrl+R)
-- 进度条显示
-- 文件排序和筛选
 
 ## 注意事项
 
-### 安全限制
-- 浏览器环境无法获取完整文件路径，必须使用Tauri拖放
-- 文件选择器仅作演示用途，实际重命名需要完整路径
-- 重命名操作前会检查文件是否存在和目标文件是否已存在
-
-### 错误处理
-- 文件数量不匹配时给出明确提示
-- 文件不存在时阻止操作
-- 重命名失败时提供详细错误信息
-- 所有异步操作都有try-catch保护
-
-### 性能考虑
-- 文件列表使用Map去重，避免重复处理
-- 状态更新使用函数式形式，确保获取最新状态
-- 事件监听器在组件卸载时正确清理
-
-## 项目状态
-
-当前版本为开发阶段(WIP)，已实现核心功能：
-- ✅ 文件拖放识别
-- ✅ 视频/字幕文件分类
-- ✅ 批量重命名功能
-- ✅ 多种语言后缀支持
-- ✅ 深色主题界面
-- ✅ 状态反馈机制
-
-待完善功能：
-- 🔄 更多文件格式支持
-- 🔄 国际化界面
-- 🔄 高级重命名规则
-- 🔄 操作历史记录
+- 仅在 path 为完整路径时落盘重命名；只含文件名则仅返回预览。
+- LLM 与 Bangumi 查询需要可访问的网络；模型接口需兼容 OpenAI Chat Completions JSON 语义。
+- 支持的视频/字幕后缀：视频 mp4/mkv/avi/mov/wmv/flv/webm/m4v/mpeg/mpg/ts/mts/m2ts；字幕 srt/ass/ssa/sub/idx/vtt/txt。
+- settings.json 存在仓库根，请慎提交；开发脚本默认忽略该文件。

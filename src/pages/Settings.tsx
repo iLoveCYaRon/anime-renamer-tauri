@@ -26,7 +26,12 @@ export default function SettingsPage() {
       const values = await form.validateFields();
       setLoading(true);
       const ok = await saveSettings(values);
-      if (ok) message.success('设置已保存');
+      if (ok) {
+        message.success('设置已保存');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent<Settings>('settings-updated', { detail: values }));
+        }
+      }
     } catch (e) {
       message.error('保存设置失败');
     } finally {

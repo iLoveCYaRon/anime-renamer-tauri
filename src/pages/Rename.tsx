@@ -13,7 +13,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { FileInfo } from "../types/llm";
-import { pickFilesAndGetInfo, pickDirectoryAndGetInfo, loadSettings } from "../api/tauri";
+import { pickFilesAndGetInfo, pickDirectoryAndGetInfo, loadSettings, Settings } from "../api/tauri";
 
 interface DragDropPayload {
   paths: string[];
@@ -59,7 +59,26 @@ export default function Rename() {
       } catch {}
     };
     init();
+
+    const onSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<Settings>).detail;
+      if (detail?.episode_regex) {
+        setEpisodeRegexStr(detail.episode_regex);
+      }
+    };
+    window.addEventListener("settings-updated", onSettingsUpdated as EventListener);
+    return () => {
+      window.removeEventListener("settings-updated", onSettingsUpdated as EventListener);
+    };
   }, []);
+
+  useEffect(() => {
+    try {
+      setEpisodeRegex(new RegExp(episodeRegexStr));
+    } catch (err) {
+      console.error("无效的剧集匹配正则:", err);
+    }
+  }, [episodeRegexStr]);
 
   useEffect(() => {
     const vMap = new Map<string, FileInfo>();

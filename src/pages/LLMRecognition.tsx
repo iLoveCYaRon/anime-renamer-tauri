@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import './llm-recognition.css';
-import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input, Row, Col } from 'antd';
+import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input, Row, Col, Modal } from 'antd';
 import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { FileInfo, RecognitionResult } from '../types/llm';
-import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, batchAnalyzeFilenames, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail } from '../api/tauri';
+import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, batchAnalyzeFilenames, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail, Settings, BangumiSubject } from '../api/tauri';
 import { useRef } from 'react';
 
 interface FileItemProps {
@@ -18,16 +18,15 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
     const i = name.lastIndexOf('.');
     return i >= 0 ? name.slice(i) : '';
   };
-  const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
   const buildPreview = (f: FileInfo, res: RecognitionResult | null) => {
     if (!res || !res.info) return '';
     const info = res.info;
     const title = info.title.trim();
-    const epPart = `.S${pad2(info.season)}E${pad2(info.episode)}`;
-    const group = info.group ? `.${info.group} ` : '';
-    const codec = info.codec ? ` .${info.codec}` : '';
-    const langs = info.language_tags ? `.${info.language_tags}` : '';
-    const base = `${title}${epPart}${group}${codec}${langs}`;
+    const yearPart = info.year ? `.${info.year}` : '';
+    const epPart = `.S01E${info.episode}`;
+    const group = info.group ? `.${info.group}` : '';
+    const codec = info.codec ? `.${info.codec}` : '';
+    const base = `${title}${yearPart}${epPart}${group}${codec}`;
     return `${base}${ext(f.name)}`;
   };
   const renderMetaLine = (res: RecognitionResult | null) => {
@@ -37,10 +36,10 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
         {info && (
           <Space size="small" wrap>
             <Tag color="blue">{info.title}</Tag>
-            <Tag color="green">{`S${pad2(info.season)}E${pad2(info.episode)}`}</Tag>
+            {info.year && <Tag color="orange">{info.year}</Tag>}
+            <Tag color="green">{`S01E${info.episode}`}</Tag>
             {info.codec && <Tag color="cyan">{info.codec}</Tag>}
             {info.group && <Tag color="magenta">{info.group}</Tag>}
-            {info.language_tags && <Tag color="gold">{info.language_tags}</Tag>}
           </Space>
         )}
         {res?.error && (
@@ -69,6 +68,9 @@ export default function LLMRecognition() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOptions, setSearchOptions] = useState<{ value: string; label: string }[]>([]);
   const [selectedDetail, setSelectedDetail] = useState<BangumiSubjectDetail | null>(null);
+  const [bangumiModalOpen, setBangumiModalOpen] = useState(false);
+  const [bangumiCandidates, setBangumiCandidates] = useState<BangumiSubject[]>([]);
+  const [candidateDetails, setCandidateDetails] = useState<Record<number, BangumiSubjectDetail>>({});
   const searchAreaRef = useRef<HTMLDivElement | null>(null);
   const fileListRef = useRef<HTMLDivElement | null>(null);
 
@@ -81,7 +83,41 @@ export default function LLMRecognition() {
       } catch {}
     };
     init();
+
+    const onSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<Settings>).detail;
+      if (!detail) return;
+      setModelUrl(detail.model_url);
+      setModelName(detail.model_name);
+    };
+    window.addEventListener('settings-updated', onSettingsUpdated as EventListener);
+    return () => window.removeEventListener('settings-updated', onSettingsUpdated as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (bangumiCandidates.length === 0) {
+      setCandidateDetails({});
+      return;
+    }
+    const fetchDetails = async () => {
+      const entries = await Promise.all(
+        bangumiCandidates.map(async (item) => {
+          try {
+            const detail = await getBangumiSubjectDetail(item.id);
+            return detail;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const detailMap: Record<number, BangumiSubjectDetail> = {};
+      entries.forEach((detail) => {
+        if (detail) detailMap[detail.id] = detail;
+      });
+      setCandidateDetails(detailMap);
+    };
+    fetchDetails();
+  }, [bangumiCandidates]);
 
   const sortFiles = (arr: FileInfo[]) => arr.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
@@ -99,8 +135,10 @@ export default function LLMRecognition() {
     try {
       const result = await pickDirectoryAndGetInfo();
       if (!result.canceled) {
-        setFiles(prev => sortFiles([...prev, ...result.files]));
-        message.success(`成功导入 ${result.files.length} 个文件`);
+        // 只保留视频文件
+        const videoFiles = result.files.filter(file => file.is_video);
+        setFiles(prev => sortFiles([...prev, ...videoFiles]));
+        message.success(`成功导入 ${videoFiles.length} 个视频文件`);
       }
     } catch (error) {
       message.error(`选择文件夹失败: ${error}`);
@@ -210,6 +248,200 @@ export default function LLMRecognition() {
       });
   };
 
+  const BangumiCard: React.FC<{
+    detail: BangumiSubjectDetail | null;
+    fallbackName?: string;
+    fallbackDate?: string;
+    onClick?: () => void;
+  }> = ({ detail, fallbackName, fallbackDate, onClick }) => {
+    const titleCn = detail?.name_cn || detail?.name || fallbackName || '未知作品';
+    const titleEn = detail?.name || fallbackName || '';
+    const episodes = detail?.episodes;
+    const year = detail?.year;
+    const cover = detail?.cover_url;
+    const dateText = fallbackDate;
+
+    return (
+      <div
+        className={`bangumi-detail-card ${onClick ? 'bangumi-detail-card--clickable' : ''}`}
+        onClick={onClick}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        onKeyDown={(e) => {
+          if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        <div className="bangumi-detail-content">
+          <div className="bangumi-cover">
+            <div className="cover-box cover-box--portrait">
+              {cover ? (
+                <img src={cover} alt={titleCn} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', background: 'var(--ant-color-fill-tertiary)' }} />
+              )}
+            </div>
+          </div>
+          <div className="bangumi-info">
+            <div className="bangumi-title-cn">{titleCn}</div>
+            {titleEn ? <div className="bangumi-title-en">{titleEn}</div> : null}
+            <div className="bangumi-meta">
+              {typeof episodes === 'number' && <span>共{episodes}集</span>}
+              {typeof year === 'number' && <span>{year}年</span>}
+              {!year && dateText && <span>{dateText}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const BangumiModalCard: React.FC<{
+    detail: BangumiSubjectDetail | null;
+    fallbackName?: string;
+    fallbackDate?: string;
+    onClick: () => void;
+  }> = ({ detail, fallbackName, fallbackDate, onClick }) => {
+    const titleCn = detail?.name_cn || detail?.name || fallbackName || '未知作品';
+    const titleEn = detail?.name || fallbackName || '';
+    const episodes = detail?.episodes;
+    const year = detail?.year;
+    const cover = detail?.cover_url;
+    const dateText = fallbackDate;
+
+    return (
+      <div className="bangumi-modal-card" onClick={onClick} role="button" tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        <div className="bangumi-modal-card-cover">
+          <div className="cover-box">
+            {cover ? <img src={cover} alt={titleCn} /> : <div style={{ width: '100%', height: '100%', background: 'var(--ant-color-fill-tertiary)' }} />}
+          </div>
+        </div>
+        <div className="bangumi-modal-card-info">
+          <div className="bangumi-modal-card-title-cn">{titleCn}</div>
+          {titleEn ? <div className="bangumi-modal-card-title-en">{titleEn}</div> : null}
+          <div className="bangumi-modal-card-meta">
+            {typeof episodes === 'number' && <span>共{episodes}集</span>}
+            {typeof year === 'number' && <span>{year}年</span>}
+            {!year && dateText && <span>{dateText}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const applyBangumiDetailToFiles = async (detail: BangumiSubjectDetail) => {
+    const bangumiTitle = detail.name_cn || detail.name;
+    if (!bangumiTitle || bangumiTitle.trim() === '') {
+      message.error('所选条目缺少标题');
+      return;
+    }
+
+    message.info('开始分析文件信息...');
+    let analyzedCount = 0;
+    let successCount = 0;
+
+    for (const file of files) {
+      if (!file.is_video) continue;
+
+      try {
+        setResults(prev => {
+          const newResults = new Map(prev);
+          const existing = newResults.get(file.path);
+          newResults.set(file.path, {
+            file,
+            info: existing?.info || null,
+            loading: true,
+            error: null,
+          });
+          return newResults;
+        });
+
+        const fileResponse = await analyzeFilename({
+          filename: file.name,
+          model_url: modelUrl,
+          model_name: modelName,
+        });
+
+        analyzedCount++;
+
+        if (fileResponse.success && fileResponse.data) {
+          const updatedInfo = {
+            ...fileResponse.data,
+            title: bangumiTitle,
+            year: detail.year ?? fileResponse.data.year,
+          };
+
+          setResults(prev => {
+            const newResults = new Map(prev);
+            newResults.set(file.path, {
+              file,
+              info: updatedInfo,
+              loading: false,
+              error: null,
+            });
+            return newResults;
+          });
+
+          successCount++;
+        } else {
+          setResults(prev => {
+            const newResults = new Map(prev);
+            newResults.set(file.path, {
+              file,
+              info: null,
+              loading: false,
+              error: fileResponse.error || '识别失败',
+            });
+            return newResults;
+          });
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        setResults(prev => {
+          const newResults = new Map(prev);
+          newResults.set(file.path, {
+            file,
+            info: null,
+            loading: false,
+            error: `分析错误: ${error}`,
+          });
+          return newResults;
+        });
+      }
+    }
+
+    if (successCount > 0) {
+      message.success(`文件分析完成！成功识别 ${successCount}/${analyzedCount} 个文件，使用标题: ${bangumiTitle}`);
+    } else {
+      message.warning('文件分析完成，但未成功识别任何文件信息');
+    }
+  };
+
+  const handlePickBangumiCandidate = async (subject: BangumiSubject) => {
+    setBangumiModalOpen(false);
+    try {
+      const detail = await getBangumiSubjectDetail(subject.id);
+      setSelectedDetail(detail);
+      const displayName = subject.name_cn || subject.name;
+      setSearchQuery(displayName);
+      message.success(`已选择作品：${displayName}`);
+      await applyBangumiDetailToFiles(detail);
+    } catch (e) {
+      setSelectedDetail(null);
+      message.error('获取作品详情失败');
+    }
+  };
+
   const handleInferAnimeFromFiles = async () => {
     const videoFiles = files.filter(f => f.is_video);
     const candidates = (videoFiles.length > 0 ? videoFiles : files)
@@ -232,15 +464,15 @@ export default function LLMRecognition() {
       });
 
       if (response.success && response.data) {
-        const { anime_title, confidence } = response.data;
+        const { title } = response.data;
         
-        if (!anime_title || anime_title.trim() === '') {
+        if (!title || title.trim() === '') {
           message.error('无法识别列表文件对应的动画');
           return;
         }
 
         // 设置搜索查询
-        const query = anime_title.trim();
+        const query = title.trim();
         setSearchQuery(query);
         
         // 搜索 Bangumi
@@ -252,100 +484,12 @@ export default function LLMRecognition() {
           }));
           setSearchOptions(opts);
           
-          if (list.length > 0) {
-            const detail = await getBangumiSubjectDetail(list[0].id);
-            setSelectedDetail(detail);
-            message.success(`成功识别动画: ${query} (置信度: ${Math.round(confidence * 100)}%)`);
-            
-            // 获取Bangumi中文标题
-            const bangumiTitle = detail.name_cn || detail.name;
-            
-            // 对文件逐个调用分析方法获取原信息并显示重命名预览
-            message.info('开始分析文件信息...');
-            let analyzedCount = 0;
-            let successCount = 0;
-            
-            for (const file of files) {
-              if (!file.is_video) continue;
-              
-              try {
-                // 设置加载状态
-                setResults(prev => {
-                  const newResults = new Map(prev);
-                  const existing = newResults.get(file.path);
-                  newResults.set(file.path, {
-                    file,
-                    info: existing?.info || null,
-                    loading: true,
-                    error: null,
-                  });
-                  return newResults;
-                });
-                
-                // 调用分析API获取文件信息
-                const fileResponse = await analyzeFilename({
-                  filename: file.name,
-                  model_url: modelUrl,
-                  model_name: modelName,
-                });
-                
-                analyzedCount++;
-                
-                if (fileResponse.success && fileResponse.data) {
-                  // 使用Bangumi标题替换原标题
-                  const updatedInfo = {
-                    ...fileResponse.data,
-                    title: bangumiTitle
-                  };
-                  
-                  setResults(prev => {
-                    const newResults = new Map(prev);
-                    newResults.set(file.path, {
-                      file,
-                      info: updatedInfo,
-                      loading: false,
-                      error: null,
-                    });
-                    return newResults;
-                  });
-                  
-                  successCount++;
-                } else {
-                  setResults(prev => {
-                    const newResults = new Map(prev);
-                    newResults.set(file.path, {
-                      file,
-                      info: null,
-                      loading: false,
-                      error: fileResponse.error || '识别失败',
-                    });
-                    return newResults;
-                  });
-                }
-                
-                // 添加小延迟避免并发请求过多
-                await new Promise(resolve => setTimeout(resolve, 300));
-                
-              } catch (error) {
-                setResults(prev => {
-                  const newResults = new Map(prev);
-                  newResults.set(file.path, {
-                    file,
-                    info: null,
-                    loading: false,
-                    error: `分析错误: ${error}`,
-                  });
-                  return newResults;
-                });
-              }
-            }
-            
-            if (successCount > 0) {
-              message.success(`文件分析完成！成功识别 ${successCount}/${analyzedCount} 个文件，使用标题: ${bangumiTitle}`);
-            } else {
-              message.warning(`文件分析完成，但未成功识别任何文件信息`);
-            }
-            
+          const topFive = list.slice(0, 5);
+
+          if (topFive.length > 0) {
+            setBangumiCandidates(topFive);
+            setBangumiModalOpen(true);
+            message.info('选择匹配的动画作品以继续');
           } else {
             setSelectedDetail(null);
             message.warning('未在 Bangumi 找到匹配动画');
@@ -407,29 +551,7 @@ export default function LLMRecognition() {
       >
         <div ref={searchAreaRef}>
         {selectedDetail ? (
-          <div className="bangumi-detail-card">
-            <div className="bangumi-detail-content">
-              <div className="bangumi-cover">
-                <div className="cover-box">
-                  {selectedDetail.cover_url ? (
-                    <img src={selectedDetail.cover_url} alt={selectedDetail.name_cn || selectedDetail.name} />
-                  ) : null}
-                </div>
-              </div>
-              <div className="bangumi-info">
-                <div className="bangumi-title-cn">{selectedDetail.name_cn || selectedDetail.name}</div>
-                <div className="bangumi-title-en">{selectedDetail.name}</div>
-                <div className="bangumi-meta">
-                  {typeof selectedDetail.episodes === 'number' && (
-                    <span>共{selectedDetail.episodes}集</span>
-                  )}
-                  {typeof selectedDetail.year === 'number' && (
-                    <span>{selectedDetail.year}年</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <BangumiCard detail={selectedDetail} />
         ) : (
           <div className="bangumi-detail-card">
             <div style={{ padding: 12 }}>
@@ -478,6 +600,29 @@ export default function LLMRecognition() {
           )}
         </div>
       </Card>
+
+      <Modal
+        open={bangumiModalOpen}
+        title="选择匹配的动画作品"
+        footer={null}
+        onCancel={() => setBangumiModalOpen(false)}
+      >
+        {bangumiCandidates.length === 0 ? (
+          <Typography.Text type="secondary">暂无候选结果</Typography.Text>
+        ) : (
+          <div className="bangumi-candidate-list">
+            {bangumiCandidates.map(item => (
+              <BangumiModalCard
+                key={item.id}
+                detail={candidateDetails[item.id] || null}
+                fallbackName={item.name_cn || item.name}
+                fallbackDate={item.date}
+                onClick={() => handlePickBangumiCandidate(item)}
+              />
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

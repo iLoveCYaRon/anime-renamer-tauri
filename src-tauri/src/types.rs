@@ -29,14 +29,12 @@ pub struct LLMRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct AnimeInfo {
     pub title: String,
-    pub season: String,
-    pub episode: String,
+    #[serde(default)]
+    pub episode: Option<String>,
     #[serde(default)]
     pub codec: Option<String>,
     #[serde(default)]
     pub group: Option<String>,
-    #[serde(default)]
-    pub language_tags: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -56,14 +54,8 @@ pub struct BatchLLMRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct BatchLLMResponse {
     pub success: bool,
-    pub data: Option<BatchLLMResult>,
+    pub data: Option<AnimeInfo>,
     pub error: Option<String>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct BatchLLMResult {
-    pub anime_title: String,
-    pub confidence: f64,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

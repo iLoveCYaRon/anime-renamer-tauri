@@ -28,3 +28,4 @@ tauri-plugin-dialog = "2.0.0"
 rfd = "0.15.4"
 reqwest = { version = "0.11", features = ["json"] }
 urlencoding = "2.1"
+regex = "1.0"

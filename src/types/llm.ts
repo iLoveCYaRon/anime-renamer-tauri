@@ -6,11 +6,10 @@ export interface FileInfo {
 
 export interface AnimeInfo {
   title: string;
-  season: string;
-  episode: string;
+  episode?: string;
   codec?: string;
   group?: string;
-  language_tags?: string;
+  year?: number;
 }
 
 export interface RecognitionResult {
@@ -40,9 +39,6 @@ export interface BatchLLMRequest {
 
 export interface BatchLLMResponse {
   success: boolean;
-  data?: {
-    anime_title: string;
-    confidence: number;
-  };
+  data?: AnimeInfo;
   error?: string;
 }
