@@ -81,7 +81,7 @@ export default function SettingsPage() {
             <Input placeholder="http://localhost:11434/v1/chat/completions" />
           </Form.Item>
           <Form.Item name="model_name" label="模型名称" rules={[{ required: true }]}>
-            <Input placeholder="qwen2.5:7b" />
+            <Input placeholder="qwen/qwen3-vl-8b" />
           </Form.Item>
         </Form>
       </Card>

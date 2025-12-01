@@ -60,7 +60,7 @@ export async function loadSettings(): Promise<Settings> {
     return {
       episode_regex: '\\[(\\d{2})\\]',
       model_url: 'http://localhost:11434/v1/chat/completions',
-      model_name: 'qwen2.5:7b',
+      model_name: 'qwen/qwen3-vl-8b',
     };
   }
   return invoke('load_settings');

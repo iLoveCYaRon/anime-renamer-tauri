@@ -50,6 +50,7 @@
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  position: relative;
 }
 .llm-page .list-body.empty {
   align-items: center;
@@ -69,6 +70,21 @@
 }
 .llm-page .row-item:last-child {
   border-bottom: none;
+}
+
+.llm-page .floating-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.llm-page .floating-actions .floating-button {
+  pointer-events: auto;
+  border-radius: 999px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
 }
 
 
@@ -149,7 +165,8 @@
   flex-direction: column;
   gap: 12px;
 }
-.llm-page .bangumi-modal-card {
+.llm-page .bangumi-modal-card,
+:where(.bangumi-modal-card) {
   display: flex;
   gap: 12px;
   padding: 12px;
@@ -163,41 +180,48 @@
   transform: translateY(-2px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
 }
-.llm-page .bangumi-modal-card-cover {
+.llm-page .bangumi-modal-card-cover,
+:where(.bangumi-modal-card-cover) {
   width: 120px;
   flex: 0 0 120px;
 }
-.llm-page .bangumi-modal-card-cover .cover-box {
+.llm-page .bangumi-modal-card-cover .cover-box,
+:where(.bangumi-modal-card-cover) .cover-box {
   width: 100%;
-  aspect-ratio: 9 / 16;
+  aspect-ratio: 1 / 1;
   background: var(--ant-color-fill-tertiary);
   border-radius: 8px;
   overflow: hidden;
 }
-.llm-page .bangumi-modal-card-cover .cover-box img {
+.llm-page .bangumi-modal-card-cover .cover-box img,
+:where(.bangumi-modal-card-cover) .cover-box img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
-.llm-page .bangumi-modal-card-info {
+.llm-page .bangumi-modal-card-info,
+:where(.bangumi-modal-card-info) {
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 6px;
   min-width: 0;
 }
-.llm-page .bangumi-modal-card-title-cn {
+.llm-page .bangumi-modal-card-title-cn,
+:where(.bangumi-modal-card-title-cn) {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
 }
-.llm-page .bangumi-modal-card-title-en {
+.llm-page .bangumi-modal-card-title-en,
+:where(.bangumi-modal-card-title-en) {
   font-size: 13px;
   color: var(--ant-color-text-tertiary);
   line-height: 1.3;
 }
-.llm-page .bangumi-modal-card-meta {
+.llm-page .bangumi-modal-card-meta,
+:where(.bangumi-modal-card-meta) {
   display: flex;
   gap: 8px;
   color: var(--ant-color-text-secondary);

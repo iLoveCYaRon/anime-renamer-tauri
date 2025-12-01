@@ -1,34 +1,43 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import './llm-recognition.css';
 import { Card, Button, List, Tag, Space, message, Typography, Flex, AutoComplete, Input, Row, Col, Modal } from 'antd';
-import { FolderOpenOutlined, FileOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
+import { FolderOpenOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons';
 import { FileInfo, RecognitionResult } from '../types/llm';
-import { getDroppedFiles, pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, batchAnalyzeFilenames, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail, Settings, BangumiSubject } from '../api/tauri';
+import { pickFilesAndGetInfo, pickDirectoryAndGetInfo, analyzeFilename, batchAnalyzeFilenames, loadSettings, searchBangumiSubjects, getBangumiSubjectDetail, BangumiSubjectDetail, Settings, BangumiSubject } from '../api/tauri';
 import { useRef } from 'react';
+import { rename as renameFile, exists } from '@tauri-apps/plugin-fs';
+
+type RenameOperation = {
+  fromPath: string;
+  toPath: string;
+  oldFile: FileInfo;
+  newFile: FileInfo;
+};
+
+const getExtension = (name: string) => {
+  const i = name.lastIndexOf('.');
+  return i >= 0 ? name.slice(i) : '';
+};
+
+const buildPreviewName = (file: FileInfo, result: RecognitionResult | null) => {
+  if (!result || !result.info) return '';
+  const info = result.info;
+  const title = info.title.trim();
+  const yearPart = info.year ? `.${info.year}` : '';
+  const epPart = `.S01E${info.episode}`;
+  const group = info.group ? `.${info.group}` : '';
+  const codec = info.codec ? `.${info.codec}` : '';
+  const base = `${title}${yearPart}${epPart}${group}${codec}`;
+  return `${base}${getExtension(file.name)}`;
+};
 
 interface FileItemProps {
   file: FileInfo;
   result: RecognitionResult | null;
-  onAnalyze: (file: FileInfo) => void;
 }
 
-function FileItem({ file, result, onAnalyze }: FileItemProps) {
+function FileItem({ file, result }: FileItemProps) {
   const { Text } = Typography;
-  const ext = (name: string) => {
-    const i = name.lastIndexOf('.');
-    return i >= 0 ? name.slice(i) : '';
-  };
-  const buildPreview = (f: FileInfo, res: RecognitionResult | null) => {
-    if (!res || !res.info) return '';
-    const info = res.info;
-    const title = info.title.trim();
-    const yearPart = info.year ? `.${info.year}` : '';
-    const epPart = `.S01E${info.episode}`;
-    const group = info.group ? `.${info.group}` : '';
-    const codec = info.codec ? `.${info.codec}` : '';
-    const base = `${title}${yearPart}${epPart}${group}${codec}`;
-    return `${base}${ext(f.name)}`;
-  };
   const renderMetaLine = (res: RecognitionResult | null) => {
     const info = res?.info || null;
     return (
@@ -53,7 +62,7 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
         <Text ellipsis>{file.path}</Text>
-        <Text ellipsis>{buildPreview(file, result) || '暂无预览'}</Text>
+        <Text ellipsis>{buildPreviewName(file, result) || '暂无预览'}</Text>
         {renderMetaLine(result)}
       </div>
 
@@ -63,8 +72,11 @@ function FileItem({ file, result, onAnalyze }: FileItemProps) {
 export default function LLMRecognition() {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [results, setResults] = useState<Map<string, RecognitionResult>>(new Map());
+  const [lastRenameOps, setLastRenameOps] = useState<RenameOperation[] | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const [modelUrl, setModelUrl] = useState('http://localhost:11434/v1/chat/completions');
-  const [modelName, setModelName] = useState('qwen2.5:7b');
+  const [modelName, setModelName] = useState('qwen/qwen3-vl-8b');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOptions, setSearchOptions] = useState<{ value: string; label: string }[]>([]);
   const [selectedDetail, setSelectedDetail] = useState<BangumiSubjectDetail | null>(null);
@@ -73,6 +85,17 @@ export default function LLMRecognition() {
   const [candidateDetails, setCandidateDetails] = useState<Record<number, BangumiSubjectDetail>>({});
   const searchAreaRef = useRef<HTMLDivElement | null>(null);
   const fileListRef = useRef<HTMLDivElement | null>(null);
+  const resetPageData = useCallback(() => {
+    setFiles([]);
+    setResults(new Map());
+    setLastRenameOps(null);
+    setSelectedDetail(null);
+    setSearchQuery('');
+    setSearchOptions([]);
+    setBangumiCandidates([]);
+    setCandidateDetails({});
+    setBangumiModalOpen(false);
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -125,6 +148,7 @@ export default function LLMRecognition() {
     try {
       const pickedFiles = await pickFilesAndGetInfo();
       setFiles(prev => sortFiles([...prev, ...pickedFiles]));
+      setLastRenameOps(null);
       message.success(`成功选择 ${pickedFiles.length} 个文件`);
     } catch (error) {
       message.error(`选择文件失败: ${error}`);
@@ -137,7 +161,8 @@ export default function LLMRecognition() {
       if (!result.canceled) {
         // 只保留视频文件
         const videoFiles = result.files.filter(file => file.is_video);
-        setFiles(prev => sortFiles([...prev, ...videoFiles]));
+        resetPageData();
+        setFiles(sortFiles(videoFiles));
         message.success(`成功导入 ${videoFiles.length} 个视频文件`);
       }
     } catch (error) {
@@ -506,11 +531,162 @@ export default function LLMRecognition() {
     }
   };
 
+  const buildNewPathFromFile = (file: FileInfo, newName: string) => {
+    const slashIndex = Math.max(file.path.lastIndexOf('/'), file.path.lastIndexOf('\\'));
+    if (slashIndex < 0) return '';
+    return `${file.path.slice(0, slashIndex + 1)}${newName}`;
+  };
+
+  const handleRenameWithPreview = async () => {
+    if (renaming) return;
+    const videoFiles = files.filter(f => f.is_video);
+    if (videoFiles.length === 0) {
+      message.warning('暂无可重命名的视频文件');
+      return;
+    }
+
+    const plans: RenameOperation[] = [];
+    const skipped: string[] = [];
+
+    videoFiles.forEach(file => {
+      const previewName = buildPreviewName(file, results.get(file.path) || null);
+      if (!previewName) {
+        skipped.push(file.name);
+        return;
+      }
+      const targetPath = buildNewPathFromFile(file, previewName);
+      if (!targetPath) {
+        skipped.push(file.name);
+        return;
+      }
+      if (targetPath === file.path) {
+        return;
+      }
+      plans.push({
+        fromPath: file.path,
+        toPath: targetPath,
+        oldFile: file,
+        newFile: { ...file, name: previewName, path: targetPath },
+      });
+    });
+
+    if (plans.length === 0) {
+      message.warning('没有可依据预览命名的文件');
+      return;
+    }
+
+    const uniqueTargets = new Set(plans.map(p => p.toPath));
+    if (uniqueTargets.size !== plans.length) {
+      message.error('存在重复的目标文件名，请检查识别结果');
+      return;
+    }
+
+    setRenaming(true);
+    try {
+      for (const plan of plans) {
+        const targetExists = await exists(plan.toPath);
+        if (targetExists) {
+          throw new Error(`目标文件已存在：${plan.toPath}`);
+        }
+      }
+
+      for (const plan of plans) {
+        await renameFile(plan.fromPath, plan.toPath);
+      }
+
+      const planMap = new Map(plans.map(p => [p.fromPath, p]));
+
+      setFiles(prev => sortFiles(prev.map(file => planMap.get(file.path)?.newFile || file)));
+      setResults(prev => {
+        const newMap = new Map<string, RecognitionResult>();
+        prev.forEach((res, key) => {
+          const op = planMap.get(key);
+          if (op) {
+            newMap.set(op.toPath, { ...res, file: op.newFile });
+          } else {
+            newMap.set(key, res);
+          }
+        });
+        return newMap;
+      });
+      setLastRenameOps(plans);
+      if (skipped.length > 0) {
+        message.info(`已重命名 ${plans.length} 个文件，跳过 ${skipped.length} 个无预览文件`);
+      } else {
+        message.success(`已重命名 ${plans.length} 个文件`);
+      }
+    } catch (error) {
+      message.error(`重命名失败: ${error}`);
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleUndoRename = async () => {
+    if (undoing) return;
+    if (!lastRenameOps || lastRenameOps.length === 0) {
+      message.info('暂无可撤销的重命名记录');
+      return;
+    }
+
+    setUndoing(true);
+    try {
+      for (const op of lastRenameOps) {
+        const currentExists = await exists(op.toPath);
+        if (!currentExists) {
+          throw new Error(`文件不存在，无法撤销：${op.toPath}`);
+        }
+        const targetOccupied = await exists(op.fromPath);
+        if (targetOccupied) {
+          throw new Error(`原路径已存在同名文件：${op.fromPath}`);
+        }
+      }
+
+      for (const op of [...lastRenameOps].reverse()) {
+        await renameFile(op.toPath, op.fromPath);
+      }
+
+      const opMap = new Map(lastRenameOps.map(op => [op.toPath, op]));
+      setFiles(prev => sortFiles(prev.map(file => opMap.get(file.path)?.oldFile || file)));
+      setResults(prev => {
+        const newMap = new Map<string, RecognitionResult>();
+        prev.forEach((res, key) => {
+          const op = opMap.get(key);
+          if (op) {
+            newMap.set(op.fromPath, { ...res, file: op.oldFile });
+          } else {
+            newMap.set(key, res);
+          }
+        });
+        return newMap;
+      });
+
+      setLastRenameOps(null);
+      message.success('已撤销上次重命名');
+    } catch (error) {
+      message.error(`撤销失败: ${error}`);
+    } finally {
+      setUndoing(false);
+    }
+  };
+
   const handleClearFiles = () => {
     setFiles([]);
     setResults(new Map());
+    setLastRenameOps(null);
     message.success('已清空文件列表');
   };
+
+  const videoFilesInList = files.filter(f => f.is_video);
+  const recognitionCompleted = videoFilesInList.length > 0 && videoFilesInList.every(file => {
+    const res = results.get(file.path);
+    return res ? !res.loading : false;
+  });
+  const previewReadyCount = videoFilesInList.reduce((count, file) => {
+    const preview = buildPreviewName(file, results.get(file.path) || null);
+    return preview ? count + 1 : count;
+  }, 0);
+  const canRename = recognitionCompleted && previewReadyCount > 0;
 
   useEffect(() => {}, []);
 
@@ -572,13 +748,36 @@ export default function LLMRecognition() {
             )}
           </Space>
         }
-        extra={
-          files.length > 0 ? (
-            <Button style={{height: 28}} type="primary" danger onClick={handleClearFiles} aria-label="清空文件列表">清空</Button>
-          ) : null
-        }
       >
         <div ref={fileListRef} className={`list-body ${files.length === 0 ? 'empty' : ''}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          {files.length > 0 && (
+            <div className="floating-actions">
+              {canRename && (
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={handleRenameWithPreview}
+                  loading={renaming}
+                  aria-label="执行重命名"
+                  className="floating-button"
+                >
+                  执行重命名
+                </Button>
+              )}
+              {lastRenameOps && (
+                <Button
+                  size="small"
+                  onClick={handleUndoRename}
+                  loading={undoing}
+                  aria-label="撤销上次重命名"
+                  className="floating-button"
+                >
+                  撤销上次重命名
+                </Button>
+              )}
+              <Button size="small" danger onClick={handleClearFiles} aria-label="清空文件列表" className="floating-button">清空</Button>
+            </div>
+          )}
           {files.length === 0 ? (
             <List locale={{ emptyText: '暂无文件' }} />
           ) : (
@@ -590,7 +789,6 @@ export default function LLMRecognition() {
                       <FileItem
                         file={file}
                         result={results.get(file.path) || null}
-                        onAnalyze={handleAnalyze}
                       />
                     </div>
                   </Col>
@@ -610,7 +808,7 @@ export default function LLMRecognition() {
         {bangumiCandidates.length === 0 ? (
           <Typography.Text type="secondary">暂无候选结果</Typography.Text>
         ) : (
-          <div className="bangumi-candidate-list">
+          <Card className="section-card" size="small">
             {bangumiCandidates.map(item => (
               <BangumiModalCard
                 key={item.id}
@@ -620,7 +818,7 @@ export default function LLMRecognition() {
                 onClick={() => handlePickBangumiCandidate(item)}
               />
             ))}
-          </div>
+          </Card>
         )}
       </Modal>
     </div>

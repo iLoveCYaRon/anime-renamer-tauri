@@ -1,11 +1,13 @@
 use std::{
-    env,
+    fs,
     path::{Path, PathBuf},
 };
 
 pub fn settings_path() -> Result<PathBuf, String> {
-    let cwd = env::current_dir().map_err(|e| format!("获取当前工作目录失败: {}", e))?;
-    Ok(cwd.join("settings.json"))
+    let base = dirs::config_dir().ok_or("获取配置目录失败")?;
+    let app_dir = base.join("anime-renamer-tauri");
+    fs::create_dir_all(&app_dir).map_err(|e| format!("创建配置目录失败: {}", e))?;
+    Ok(app_dir.join("settings.json"))
 }
 
 // 获取文件扩展名
